@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import type { Action, SessionState } from "@/engine";
 import { MAX_COURTS, MIN_COURTS, playersPerCourt } from "@/engine";
+import { useState } from "react";
 
 interface SettingsSheetProps {
   open: boolean;
@@ -13,18 +14,23 @@ interface SettingsSheetProps {
 
 export function SettingsSheet({ open, onOpenChange, state, dispatch }: SettingsSheetProps) {
   const per = playersPerCourt(state);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+
+  // Reset the confirm step whenever the sheet opens or closes, so it never
+  // reappears mid-confirmation next time.
+  const handleOpenChange = (next: boolean) => {
+    setConfirmingReset(false);
+    onOpenChange(next);
+  };
 
   const reset = () => {
-    if (
-      window.confirm("Reset the whole session? Players, courts and game counts will be cleared.")
-    ) {
-      dispatch({ type: "RESET" });
-      onOpenChange(false);
-    }
+    dispatch({ type: "RESET" });
+    setConfirmingReset(false);
+    onOpenChange(false);
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent>
         <SheetTitle className="mt-1 text-[13px] font-bold uppercase tracking-[0.16em] text-muted">
           Session
@@ -75,9 +81,34 @@ export function SettingsSheet({ open, onOpenChange, state, dispatch }: SettingsS
           </Row>
         </div>
 
-        <Button variant="danger" className="mt-3.5 w-full py-3.5" onClick={reset}>
-          Reset session
-        </Button>
+        {confirmingReset ? (
+          <div className="mt-3.5 rounded-xl border border-coral/30 bg-coral/10 p-3.5">
+            <p className="text-sm font-semibold text-line">Reset the whole session?</p>
+            <p className="mt-1 text-xs text-muted">
+              Players, courts and game counts will all be cleared. This can't be undone.
+            </p>
+            <div className="mt-3 flex gap-2.5">
+              <Button
+                variant="outline"
+                className="flex-1 py-3"
+                onClick={() => setConfirmingReset(false)}
+              >
+                Cancel
+              </Button>
+              <Button variant="danger" className="flex-1 py-3" onClick={reset}>
+                Reset everything
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="danger"
+            className="mt-3.5 w-full py-3.5"
+            onClick={() => setConfirmingReset(true)}
+          >
+            Reset session
+          </Button>
+        )}
       </SheetContent>
     </Sheet>
   );
