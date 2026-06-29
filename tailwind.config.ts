@@ -57,7 +57,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["Outfit", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+        sans: ["Outfit Variable", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
         mono: ["ui-monospace", "SF Mono", "Menlo", "Consolas", "monospace"],
       },
       borderRadius: {

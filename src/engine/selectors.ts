@@ -54,10 +54,7 @@ export function courtsView(state: SessionState): CourtView[] {
 }
 
 export function playingCount(state: SessionState): number {
-  return state.courts.reduce(
-    (sum, c) => sum + (c ? c.teamA.length + c.teamB.length : 0),
-    0,
-  );
+  return state.courts.reduce((sum, c) => sum + (c ? c.teamA.length + c.teamB.length : 0), 0);
 }
 
 export function canStart(state: SessionState): boolean {

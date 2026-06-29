@@ -71,9 +71,7 @@ export function invariantErrors(state: SessionState): string[] {
 
 /** Max gap in games played among active (non-hold) players. */
 export function activeGamesGap(state: SessionState): number {
-  const counts = state.players
-    .filter((p) => p.status !== "hold")
-    .map((p) => p.games);
+  const counts = state.players.filter((p) => p.status !== "hold").map((p) => p.games);
   if (counts.length === 0) return 0;
   return Math.max(...counts) - Math.min(...counts);
 }

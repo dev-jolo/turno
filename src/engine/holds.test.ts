@@ -3,23 +3,24 @@ import { minGames } from "./helpers";
 import { reduce } from "./reducer";
 import { courtsView, onHold, waitingQueue } from "./selectors";
 import { makeRng, startSession } from "./sim";
-import type { SessionState } from "./types";
 import { invariantErrors, roster, seatedIds } from "./test-utils";
+import type { SessionState } from "./types";
 
 const zero = () => 0;
 
 /** Play `n` balanced games (round-robin court finishing). */
-function playGames(s: SessionState, n: number, rng = makeRng(3)): SessionState {
+function playGames(start: SessionState, n: number, rng = makeRng(3)): SessionState {
+  let state = start;
   let cursor = 0;
   for (let i = 0; i < n; i++) {
-    const occ = courtsView(s)
+    const occ = courtsView(state)
       .filter((c) => c.occupied)
       .map((c) => c.index);
     if (occ.length === 0) break;
     const court = occ[cursor++ % occ.length];
-    s = reduce(s, { type: "FINISH_COURT", court, winner: "A" }, rng);
+    state = reduce(state, { type: "FINISH_COURT", court, winner: "A" }, rng);
   }
-  return s;
+  return state;
 }
 
 function session(players: number, courts = 2): SessionState {
@@ -76,9 +77,7 @@ describe("return re-slots fairly", () => {
 
     // Back of the tier: among waiting players with the same games, returner is
     // last (largest enteredAt) — so they don't cut the line.
-    const sameTier = s.players.filter(
-      (p) => p.status === "waiting" && p.games === back.games,
-    );
+    const sameTier = s.players.filter((p) => p.status === "waiting" && p.games === back.games);
     const maxEntered = Math.max(...sameTier.map((p) => p.enteredAt));
     expect(back.enteredAt).toBe(maxEntered);
     expect(invariantErrors(s)).toEqual([]);

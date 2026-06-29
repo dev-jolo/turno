@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { reduce } from "./reducer";
 import { courtsView } from "./selectors";
 import { makeRng, startSession } from "./sim";
-import type { Format, GameMode, Winner } from "./types";
 import { activeGamesGap, invariantErrors, roster } from "./test-utils";
+import type { Format, GameMode, Winner } from "./types";
 
 const FORMATS: Format[] = ["doubles", "singles"];
 const MODES: GameMode[] = ["rotating", "king"];

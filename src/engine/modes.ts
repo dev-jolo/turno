@@ -27,12 +27,7 @@ export interface GameModeStrategy {
    * Resolve a finished game on court `courtIndex`. Mutates the draft: records
    * history, advances game counts, and re-seats courts per the mode's rules.
    */
-  onGameEnd(
-    s: SessionState,
-    courtIndex: number,
-    winner: Winner | undefined,
-    rng: Rng,
-  ): void;
+  onGameEnd(s: SessionState, courtIndex: number, winner: Winner | undefined, rng: Rng): void;
 }
 
 /** Count a finished game for everyone on the court and record their history. */

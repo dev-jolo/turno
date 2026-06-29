@@ -4,8 +4,8 @@ import { bestSplit, pairCost } from "./helpers";
 import { initialState, reduce } from "./reducer";
 import { courtsView } from "./selectors";
 import { makeRng, startSession } from "./sim";
-import type { Rng } from "./types";
 import { repeatTotals, roster } from "./test-utils";
+import type { Rng } from "./types";
 
 describe("bestSplit / pairCost", () => {
   it("picks the lowest-cost split of four players", () => {
@@ -68,9 +68,7 @@ function naiveBaselinePartnerRepeats(
   const courtGroups: (string[] | null)[] = new Array(courts).fill(null);
 
   const waiting = () =>
-    players
-      .filter((p) => !p.seated)
-      .sort((a, b) => a.games - b.games || a.enteredAt - b.enteredAt);
+    players.filter((p) => !p.seated).sort((a, b) => a.games - b.games || a.enteredAt - b.enteredAt);
 
   const fill = () => {
     for (let i = 0; i < courts; i++) {
@@ -91,9 +89,7 @@ function naiveBaselinePartnerRepeats(
   fill();
   let cursor = 0;
   for (let r = 0; r < rounds; r++) {
-    const occupied = courtGroups
-      .map((g, i) => (g ? i : -1))
-      .filter((i) => i >= 0);
+    const occupied = courtGroups.map((g, i) => (g ? i : -1)).filter((i) => i >= 0);
     if (occupied.length === 0) break;
     const i = occupied[cursor++ % occupied.length];
     const group = courtGroups[i] as string[];
@@ -119,12 +115,7 @@ function naiveBaselinePartnerRepeats(
   return repeats;
 }
 
-function enginePartnerRepeats(
-  names: string[],
-  courts: number,
-  rounds: number,
-  rng: Rng,
-): number {
+function enginePartnerRepeats(names: string[], courts: number, rounds: number, rng: Rng): number {
   let state = startSession(
     { courts, format: "doubles", gameMode: "rotating", playerNames: names },
     rng,

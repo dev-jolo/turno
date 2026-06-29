@@ -4,8 +4,8 @@ import { strategyFor } from "./modes";
 import { reduce } from "./reducer";
 import { courtsView, onHold } from "./selectors";
 import { makeRng, startSession } from "./sim";
-import type { SessionState } from "./types";
 import { invariantErrors, roster, seatedIds } from "./test-utils";
+import type { SessionState } from "./types";
 
 const zero = () => 0;
 

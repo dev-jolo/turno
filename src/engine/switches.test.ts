@@ -2,22 +2,23 @@ import { describe, expect, it } from "vitest";
 import { initialState, reduce } from "./reducer";
 import { courtsView, playingCount, waitingQueue } from "./selectors";
 import { makeRng, startSession } from "./sim";
-import type { SessionState } from "./types";
 import { invariantErrors, roster, seatedIds } from "./test-utils";
+import type { SessionState } from "./types";
 
 const zero = () => 0;
 
-function play(s: SessionState, n: number, rng = makeRng(5)): SessionState {
+function play(start: SessionState, n: number, rng = makeRng(5)): SessionState {
+  let state = start;
   let cursor = 0;
   for (let i = 0; i < n; i++) {
-    const occ = courtsView(s)
+    const occ = courtsView(state)
       .filter((c) => c.occupied)
       .map((c) => c.index);
     if (occ.length === 0) break;
     const court = occ[cursor++ % occ.length];
-    s = reduce(s, { type: "FINISH_COURT", court, winner: "A" }, rng);
+    state = reduce(state, { type: "FINISH_COURT", court, winner: "A" }, rng);
   }
-  return s;
+  return state;
 }
 
 describe("reducer purity", () => {
@@ -138,9 +139,9 @@ describe("mix all courts", () => {
       rng,
     );
     const initialCourt = new Map<string, number>();
-    courtsView(s).forEach((c) => {
+    for (const c of courtsView(s)) {
       for (const p of [...c.teamA, ...c.teamB]) initialCourt.set(p.id, c.index);
-    });
+    }
 
     // Several synchronized mix rounds.
     for (let r = 0; r < 6; r++) s = reduce(s, { type: "MIX_ALL" }, rng);

@@ -7,11 +7,7 @@
  * read state live in `selectors.ts`.
  */
 
-import {
-  OPPONENT_WEIGHT,
-  PARTNER_WEIGHT,
-  SELECTION_WINDOW_SLACK,
-} from "./constants";
+import { OPPONENT_WEIGHT, PARTNER_WEIGHT, SELECTION_WINDOW_SLACK } from "./constants";
 import type { Court, Player, Rng, SessionState } from "./types";
 
 export function playersPerCourt(s: Pick<SessionState, "format">): number {
@@ -27,10 +23,7 @@ export function byId(s: SessionState, id: string): Player | undefined {
 }
 
 /** Lowest games-played among players matching `pred` (0 if none match). */
-export function minGames(
-  s: SessionState,
-  pred?: (p: Player) => boolean,
-): number {
+export function minGames(s: SessionState, pred?: (p: Player) => boolean): number {
   const pool = pred ? s.players.filter(pred) : s.players;
   if (pool.length === 0) return 0;
   return Math.min(...pool.map((p) => p.games));
@@ -48,20 +41,14 @@ export function waitingSorted(s: SessionState): Player[] {
 }
 
 export function isPlaying(s: SessionState, id: string): boolean {
-  return s.courts.some(
-    (c) => c != null && (c.teamA.includes(id) || c.teamB.includes(id)),
-  );
+  return s.courts.some((c) => c != null && (c.teamA.includes(id) || c.teamB.includes(id)));
 }
 
 /**
  * Cost of a proposed match: heavily penalize repeat partners, lightly penalize
  * repeat opponents. Lower is better.
  */
-export function pairCost(
-  s: SessionState,
-  teamA: string[],
-  teamB: string[],
-): number {
+export function pairCost(s: SessionState, teamA: string[], teamB: string[]): number {
   const get = (m: Record<string, number>, x: string): number => m[x] ?? 0;
   let cost = 0;
   for (const t of [teamA, teamB]) {
@@ -160,11 +147,13 @@ export function selectGroup(s: SessionState, rng: Rng): Split | null {
 
   const base = w.slice(0, need);
   const baseGames = base.reduce((sum, p) => sum + p.games, 0);
-  const windowIds = w
-    .slice(0, Math.min(w.length, need + SELECTION_WINDOW_SLACK))
-    .map((p) => p.id);
+  const windowIds = w.slice(0, Math.min(w.length, need + SELECTION_WINDOW_SLACK)).map((p) => p.id);
 
-  let best = bestSplit(s, base.map((p) => p.id), rng);
+  let best = bestSplit(
+    s,
+    base.map((p) => p.id),
+    rng,
+  );
   for (const combo of combinations(windowIds, need)) {
     const games = combo.reduce((sum, id) => sum + (byId(s, id)?.games ?? 0), 0);
     if (games > baseGames) continue; // never accept a less-fair group

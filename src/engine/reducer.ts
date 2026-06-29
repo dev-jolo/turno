@@ -89,7 +89,10 @@ function returnPlayer(s: SessionState, id: string): void {
   p.status = "waiting";
   // Slot back in fairly: don't leapfrog everyone, don't get buried — match the
   // current waiting minimum, then go to the back of that tier.
-  p.games = Math.max(p.games, minGames(s, (q) => q.status === "waiting" && q.id !== id));
+  p.games = Math.max(
+    p.games,
+    minGames(s, (q) => q.status === "waiting" && q.id !== id),
+  );
   p.enteredAt = s.seq++;
   p.streak = 0;
 }
@@ -191,11 +194,7 @@ function mixAll(s: SessionState, rng: Rng): void {
   assignEmptyCourts(s, rng);
 }
 
-export function reduce(
-  state: SessionState,
-  action: Action,
-  rng: Rng = Math.random,
-): SessionState {
+export function reduce(state: SessionState, action: Action, rng: Rng = Math.random): SessionState {
   if (action.type === "RESET") return initialState();
 
   const s = structuredClone(state);
