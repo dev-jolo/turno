@@ -12,8 +12,9 @@ import {
   assignEmptyCourts,
   byId,
   isPlaying,
-  minGames,
+  minQueueGames,
   playersPerCourt,
+  queueGames,
   recordHistory,
 } from "./helpers";
 import { strategyFor } from "./modes";
@@ -37,16 +38,20 @@ function clamp(n: number, lo: number, hi: number): number {
 }
 
 function newPlayer(s: SessionState, name: string): Player {
-  // Mid-session joiners start at the current min game count among active
-  // players so they catch up without hogging. Pre-start, everyone starts at 0.
-  const base = s.started ? minGames(s, (p) => p.status !== "hold") : 0;
+  // Mid-session joiners are seeded to the current min queue position among
+  // active players so they catch up without hogging — but their real `games`
+  // count stays 0, so the UI honestly shows they just joined. Pre-start,
+  // everyone starts level with no handicap.
+  const base = s.started ? minQueueGames(s, (p) => p.status !== "hold") : 0;
   const stamp = s.seq++;
   return {
     id: `p${stamp}`,
     name,
-    games: base,
+    games: 0,
+    seed: base,
     status: "waiting",
     enteredAt: stamp,
+    lastGameRound: 0,
     holdAfter: false,
     partners: {},
     opps: {},
@@ -88,11 +93,14 @@ function returnPlayer(s: SessionState, id: string): void {
   p.holdAfter = false;
   p.status = "waiting";
   // Slot back in fairly: don't leapfrog everyone, don't get buried — match the
-  // current waiting minimum, then go to the back of that tier.
-  p.games = Math.max(
-    p.games,
-    minGames(s, (q) => q.status === "waiting" && q.id !== id),
+  // current waiting minimum, then go to the back of that tier. We bump the
+  // fairness handicap (`seed`), never the real `games` count, so a player who
+  // stepped out doesn't appear to have played games they didn't.
+  const targetQueue = Math.max(
+    queueGames(p),
+    minQueueGames(s, (q) => q.status === "waiting" && q.id !== id),
   );
+  p.seed = targetQueue - p.games;
   p.enteredAt = s.seq++;
   p.streak = 0;
 }
@@ -179,6 +187,7 @@ function mixAll(s: SessionState, rng: Rng): void {
       const p = byId(s, id);
       if (!p) continue;
       p.games += 1;
+      p.lastGameRound = s.round;
       if (p.holdAfter) {
         p.status = "hold";
         p.holdAfter = false;
@@ -190,8 +199,10 @@ function mixAll(s: SessionState, rng: Rng): void {
     }
   }
   s.courts = new Array<null>(s.courtsCount).fill(null);
-  s.round += 1;
+  // Refill before bumping the round so the just-finished players are still
+  // tagged as "this round" and excluded from optional mixing swaps.
   assignEmptyCourts(s, rng);
+  s.round += 1;
 }
 
 export function reduce(state: SessionState, action: Action, rng: Rng = Math.random): SessionState {

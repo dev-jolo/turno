@@ -22,11 +22,21 @@ export function byId(s: SessionState, id: string): Player | undefined {
   return s.players.find((p) => p.id === id);
 }
 
-/** Lowest games-played among players matching `pred` (0 if none match). */
-export function minGames(s: SessionState, pred?: (p: Player) => boolean): number {
+/**
+ * A player's position in the fairness queue: real games played plus their
+ * handicap. Lower means more deserving of the next court. Decoupling this from
+ * the raw `games` count lets a latecomer slot in fairly while still honestly
+ * showing the few (or zero) games they've actually played.
+ */
+export function queueGames(p: Player): number {
+  return p.games + p.seed;
+}
+
+/** Lowest queue position among players matching `pred` (0 if none match). */
+export function minQueueGames(s: SessionState, pred?: (p: Player) => boolean): number {
   const pool = pred ? s.players.filter(pred) : s.players;
   if (pool.length === 0) return 0;
-  return Math.min(...pool.map((p) => p.games));
+  return Math.min(...pool.map(queueGames));
 }
 
 /**
@@ -37,7 +47,7 @@ export function minGames(s: SessionState, pred?: (p: Player) => boolean): number
 export function waitingSorted(s: SessionState): Player[] {
   return s.players
     .filter((p) => p.status === "waiting")
-    .sort((a, b) => a.games - b.games || a.enteredAt - b.enteredAt);
+    .sort((a, b) => queueGames(a) - queueGames(b) || a.enteredAt - b.enteredAt);
 }
 
 export function isPlaying(s: SessionState, id: string): boolean {
@@ -137,17 +147,41 @@ export function combinations<T>(arr: T[], k: number): T[][] {
 /**
  * Pick the next group for ONE court: strict fairness first, then same-fairness
  * swaps to improve partner/opponent mixing. Returns `null` if not enough
- * waiting players. Never selects a group whose total games-played exceeds the
+ * waiting players. Never selects a group whose total queue position exceeds the
  * strict fairness pick (so mixing never costs fairness).
+ *
+ * The strict `base` (the fairest `need` players) always plays — that's where a
+ * forced back-to-back legitimately comes from when there aren't enough players
+ * to rotate. The optional mixing swaps, however, only consider RESTED players
+ * (ones who didn't just come off a court this round). That way the partner
+ * optimizer never manufactures an avoidable back-to-back: a just-finished
+ * player only replays immediately when the strict fairness pick itself requires
+ * them (i.e. there genuinely aren't enough other players waiting).
  */
 export function selectGroup(s: SessionState, rng: Rng): Split | null {
   const w = waitingSorted(s);
   const need = playersPerCourt(s);
   if (w.length < need) return null;
 
+  // The strict fairness pick ALWAYS comes first and is never reshuffled by
+  // recency — skipping the fairest players would inflate the games gap. A
+  // forced back-to-back (not enough players to rotate) legitimately lives here.
   const base = w.slice(0, need);
-  const baseGames = base.reduce((sum, p) => sum + p.games, 0);
-  const windowIds = w.slice(0, Math.min(w.length, need + SELECTION_WINDOW_SLACK)).map((p) => p.id);
+  const baseIds = new Set(base.map((p) => p.id));
+  const baseGames = base.reduce((sum, p) => sum + queueGames(p), 0);
+
+  // Optional mixing extras: candidates beyond the base that the partner
+  // optimizer may swap in. Prefer RESTED players (didn't come off a court this
+  // round) so we never manufacture an AVOIDABLE back-to-back. Only when rested
+  // players are too few to fill a court (e.g. right after Mix All, when everyone
+  // just played) do we let just-finished players in as extras — they're going
+  // to replay regardless, so mixing among them is free.
+  const restedCount = w.reduce((n, p) => n + (p.lastGameRound !== s.round ? 1 : 0), 0);
+  const extras =
+    restedCount >= need
+      ? w.filter((p) => !baseIds.has(p.id) && p.lastGameRound !== s.round)
+      : w.filter((p) => !baseIds.has(p.id));
+  const windowIds = [...base, ...extras].slice(0, need + SELECTION_WINDOW_SLACK).map((p) => p.id);
 
   let best = bestSplit(
     s,
@@ -155,7 +189,10 @@ export function selectGroup(s: SessionState, rng: Rng): Split | null {
     rng,
   );
   for (const combo of combinations(windowIds, need)) {
-    const games = combo.reduce((sum, id) => sum + (byId(s, id)?.games ?? 0), 0);
+    const games = combo.reduce((sum, id) => {
+      const p = byId(s, id);
+      return sum + (p ? queueGames(p) : 0);
+    }, 0);
     if (games > baseGames) continue; // never accept a less-fair group
     const split = bestSplit(s, combo, rng);
     if (split.cost < best.cost) best = split;

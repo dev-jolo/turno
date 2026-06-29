@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { minGames } from "./helpers";
+import { minQueueGames, queueGames } from "./helpers";
 import { reduce } from "./reducer";
 import { courtsView, onHold, waitingQueue } from "./selectors";
 import { makeRng, startSession } from "./sim";
@@ -63,21 +63,30 @@ describe("return re-slots fairly", () => {
     // Hold someone who is waiting, then let the field pull ahead.
     const held = waitingQueue(s)[0].id;
     s = reduce(s, { type: "HOLD_PLAYER", id: held }, zero);
-    const heldGamesWhenBenched = s.players.find((p) => p.id === held)?.games ?? 0;
+    const benched = s.players.find((p) => p.id === held);
+    if (!benched) throw new Error("player vanished");
+    const realGamesWhenBenched = benched.games;
+    const queueWhenBenched = queueGames(benched);
     s = playGames(s, 12);
 
-    const waitingMin = minGames(s, (p) => p.status === "waiting");
+    const waitingMin = minQueueGames(s, (p) => p.status === "waiting");
     s = reduce(s, { type: "RETURN_PLAYER", id: held }, zero);
 
     const back = s.players.find((p) => p.id === held);
     if (!back) throw new Error("player vanished");
-    // Not buried below the field, not leapfrogging it: matches the min.
-    expect(back.games).toBe(Math.max(heldGamesWhenBenched, waitingMin));
+    // Real games-played is untouched by stepping out and back in — the handicap
+    // does the re-slotting, not a fake bump to the games count.
+    expect(back.games).toBe(realGamesWhenBenched);
+    // Queue position: not buried below the field, not leapfrogging it — matches
+    // the waiting minimum.
+    expect(queueGames(back)).toBe(Math.max(queueWhenBenched, waitingMin));
     expect(back.status).toBe("waiting");
 
-    // Back of the tier: among waiting players with the same games, returner is
-    // last (largest enteredAt) — so they don't cut the line.
-    const sameTier = s.players.filter((p) => p.status === "waiting" && p.games === back.games);
+    // Back of the tier: among waiting players at the same queue position, the
+    // returner is last (largest enteredAt) — so they don't cut the line.
+    const sameTier = s.players.filter(
+      (p) => p.status === "waiting" && queueGames(p) === queueGames(back),
+    );
     const maxEntered = Math.max(...sameTier.map((p) => p.enteredAt));
     expect(back.enteredAt).toBe(maxEntered);
     expect(invariantErrors(s)).toEqual([]);
@@ -85,14 +94,19 @@ describe("return re-slots fairly", () => {
 });
 
 describe("latecomers", () => {
-  it("start at the current minimum game count", () => {
+  it("seed level with the field but show zero real games played", () => {
     let s = session(9);
     s = playGames(s, 20);
-    const expected = minGames(s, (p) => p.status !== "hold");
+    const expected = minQueueGames(s, (p) => p.status !== "hold");
     expect(expected).toBeGreaterThan(0); // session has progressed
     s = reduce(s, { type: "ADD_PLAYERS", names: ["Latecomer"] }, zero);
     const late = s.players.find((p) => p.name === "Latecomer");
-    expect(late?.games).toBe(expected);
+    if (!late) throw new Error("latecomer vanished");
+    // The UI shows the truth: they just walked in, zero games played.
+    expect(late.games).toBe(0);
+    // But the fairness queue seeds them level with the field so they neither
+    // hog the next court nor get buried.
+    expect(queueGames(late)).toBe(expected);
   });
 
   it("pre-session players all start at zero", () => {

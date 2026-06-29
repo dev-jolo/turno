@@ -134,7 +134,11 @@ function enginePartnerRepeats(names: string[], courts: number, rounds: number, r
 
 describe("partner mixing reduces repeats vs a naive random baseline", () => {
   it("engine accumulates fewer partner repeats over a long session", () => {
-    const names = roster(12);
+    // 16 players / 2 courts leaves a full court of spares, so the optimizer has
+    // rested players to mix with WITHOUT ever forcing a back-to-back. (At an
+    // exact one-court surplus like 12/2, no-back-to-back and partner variety
+    // genuinely conflict — we deliberately favor no-back-to-back there.)
+    const names = roster(16);
     let engineTotal = 0;
     let baselineTotal = 0;
     for (const seed of [1, 2, 3, 4, 5]) {

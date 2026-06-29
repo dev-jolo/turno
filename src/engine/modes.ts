@@ -35,7 +35,12 @@ function tallyGame(s: SessionState, court: Court): void {
   recordHistory(s, court);
   for (const id of [...court.teamA, ...court.teamB]) {
     const p = byId(s, id);
-    if (p) p.games += 1;
+    if (p) {
+      p.games += 1;
+      // Tag the round they just played so the selector can keep them out of
+      // optional mixing swaps while rested players are available.
+      p.lastGameRound = s.round;
+    }
   }
 }
 
@@ -51,8 +56,10 @@ const rotating: GameModeStrategy = {
     tallyGame(s, court);
     for (const id of [...court.teamA, ...court.teamB]) releaseFromCourt(s, id);
     s.courts[i] = null;
-    s.round += 1;
+    // Refill first so the just-finished players are still tagged "this round"
+    // and skipped by the optional mixing swaps, then advance the round.
     assignEmptyCourts(s, rng);
+    s.round += 1;
   },
 };
 
@@ -72,8 +79,8 @@ const king: GameModeStrategy = {
     if (winner !== "A" && winner !== "B") {
       for (const id of [...court.teamA, ...court.teamB]) releaseFromCourt(s, id);
       s.courts[i] = null;
-      s.round += 1;
       assignEmptyCourts(s, rng);
+      s.round += 1;
       return;
     }
 
@@ -109,8 +116,8 @@ const king: GameModeStrategy = {
       // challenge them. Clear the court and refill fairly.
       for (const id of winners) releaseFromCourt(s, id);
       s.courts[i] = null;
-      s.round += 1;
       assignEmptyCourts(s, rng);
+      s.round += 1;
       return;
     }
 
@@ -139,9 +146,10 @@ const king: GameModeStrategy = {
       }
     }
     s.courts[i] = { teamA, teamB };
-    s.round += 1;
-    // Fill any *other* empty courts (e.g. created elsewhere) fairly.
+    // Fill any *other* empty courts (e.g. created elsewhere) fairly, then
+    // advance the round (after refilling, so recency tagging stays consistent).
     assignEmptyCourts(s, rng);
+    s.round += 1;
   },
 };
 

@@ -26,11 +26,30 @@ export type PlayerStatus = "waiting" | "playing" | "hold";
 export interface Player {
   id: string;
   name: string;
-  /** Number of completed games. Drives the fairness queue (fewest first). */
+  /**
+   * Number of games this player has actually completed. This is the real,
+   * user-facing stat — it starts at 0 for everyone and only ever goes up when a
+   * game they were in finishes. It is NOT used directly for queue fairness; see
+   * `seed`.
+   */
   games: number;
+  /**
+   * Fairness handicap. Mid-session joiners and returners are seeded so they
+   * don't leapfrog (or get buried under) the field, without faking their real
+   * `games` count. The fairness queue orders by `games + seed` (see
+   * `queueGames`), so a latecomer can show "0 games played" yet still slot in
+   * fairly. 0 for everyone who was present at the start.
+   */
+  seed: number;
   status: PlayerStatus;
   /** Monotonic order stamp — used as wait time (lower = waiting longer). */
   enteredAt: number;
+  /**
+   * The `round` in which this player last completed a game (0 if never). Used to
+   * avoid avoidable back-to-back games: a player who just came off a court is
+   * kept out of the optional partner-mixing swaps while rested players are free.
+   */
+  lastGameRound: number;
   /** If true and currently playing: bench this player after the current game. */
   holdAfter: boolean;
   /** Map of partnerId -> times partnered. */
