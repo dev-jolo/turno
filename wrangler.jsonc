@@ -1,0 +1,16 @@
+{
+  // Turno — deployed to Cloudflare Workers with static assets.
+  // Workers (not Pages) is Cloudflare's recommended path for new projects and
+  // lets us add an API to the same deployment in a later version.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "turno",
+  "compatibility_date": "2026-06-29",
+  "assets": {
+    "directory": "./dist",
+    // Client-side routes resolve to the app shell so deep links work offline.
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

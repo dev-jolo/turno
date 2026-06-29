@@ -1,0 +1,86 @@
+@import "@fontsource-variable/outfit";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Turno palette — dark court-green, optic-yellow accent, coral alert. */
+    --ink: #0f1b1a;
+    --surface: #16302c;
+    --surface-2: #1f3a35;
+    --raise: #24463f;
+    --ball: #d6f549;
+    --ball-dim: #b9d63f;
+    --line: #f4f7f0;
+    --coral: #ff6b5b;
+    --muted: #7e978f;
+    --sage: #a9c3b6;
+
+    --border: #ffffff14;
+    --input: #ffffff1a;
+    --ring: #d6f549;
+
+    --r: 16px;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+  }
+
+  body {
+    font-family: theme("fontFamily.sans");
+    background: var(--ink);
+    color: var(--line);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.45;
+    min-height: 100dvh;
+    /* Leave room for fixed bottom bars + the iPhone home indicator. */
+    padding-bottom: calc(env(safe-area-inset-bottom));
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ball);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Safe-area helpers for notched phones. */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pb-safe-12 {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  /* The signature dashed net line down the middle of a court. */
+  .court-net::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    background: repeating-linear-gradient(#f4f7f0aa 0 5px, transparent 5px 9px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
