@@ -47,3 +47,16 @@ export const KING_CHALLENGERS_FROM_QUEUE_TOP = true;
 /** Allowed court range. */
 export const MIN_COURTS = 1;
 export const MAX_COURTS = 4;
+
+/* ------------------------------------------------------------------ *
+ * Win/Lose stacking defaults.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A neutral-queue player (never had a result yet) who has waited through
+ * this many round-completions without a result is guaranteed the next open
+ * seat, ahead of continuing to pull fresh Winners/Losers pairs — so a
+ * genuine newcomer can never be passed over indefinitely.
+ * confirm with product owner
+ */
+export const WIN_LOSE_NEUTRAL_FLOOR_ROUNDS = 3;

@@ -73,6 +73,14 @@ export interface Player {
    * everyone fresh, the same as a brand-new joiner.
    */
   lastResult: "win" | "lose" | null;
+  /**
+   * Win/Lose mode only: consecutive round-completions this player has spent
+   * waiting with no result yet (`lastResult === null`) — powers the neutral
+   * queue's fairness floor (see `WIN_LOSE_NEUTRAL_FLOOR_ROUNDS`). Reset to 0
+   * the moment they get seated or get a result; never written by rotating or
+   * king mode.
+   */
+  neutralWaitRounds: number;
   /** Map of partnerId -> times partnered. */
   partners: Record<string, number>;
   /** Map of opponentId -> times opposed. */

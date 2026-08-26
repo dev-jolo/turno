@@ -8,6 +8,7 @@ import {
   KING_CHALLENGERS_FROM_QUEUE_TOP,
   KING_MAX_CONSECUTIVE_WINS,
   KING_WINNERS_STAY_AS_PARTNERSHIP,
+  WIN_LOSE_NEUTRAL_FLOOR_ROUNDS,
 } from "./constants";
 import {
   assignEmptyCourts,
@@ -247,13 +248,17 @@ function winLoseUnits(s: SessionState, result: Player["lastResult"]): Unit[] {
  * Assemble the next Win/Lose match for one court: two players from the
  * Winners queue, two from the Losers queue, taken in stacking-respecting
  * UNITS (a stacked pair is always pulled — and later seated — together, see
- * `bestWinLoseSplit`). If either queue can't supply its half, the shortfall
- * is backfilled from whichever remaining units — the other queue's overflow,
- * or anyone with no result yet — have waited longest, rather than preferring
- * one source over another; a unit that doesn't fit the remaining seats is
- * skipped, not split, same as `pickBaseUnits`. Returns null if there still
- * aren't enough waiting players to fill the court (same convention as
- * rotating mode's `selectGroup`).
+ * `bestWinLoseSplit`). Before that, any neutral-queue unit that's waited past
+ * `WIN_LOSE_NEUTRAL_FLOOR_ROUNDS` is reserved a seat first — guaranteed ahead
+ * of the Winners/Losers cycle, not merely eligible for the ordinary
+ * backfill — so a newcomer can't be passed over indefinitely; the ordinary
+ * half-quotas then fill whatever seats remain. If either queue still can't
+ * supply its share, the shortfall is backfilled from whichever remaining
+ * units — the other queue's overflow, or any other neutral player — have
+ * waited longest, rather than preferring one source over another; a unit
+ * that doesn't fit the remaining seats is skipped, not split, same as
+ * `pickBaseUnits`. Returns null if there still aren't enough waiting players
+ * to fill the court (same convention as rotating mode's `selectGroup`).
  */
 function selectWinLoseGroup(s: SessionState, rng: Rng): Split | null {
   const need = playersPerCourt(s);
@@ -263,15 +268,24 @@ function selectWinLoseGroup(s: SessionState, rng: Rng): Split | null {
   const loserUnits = winLoseUnits(s, "lose");
   const neutralUnits = winLoseUnits(s, null);
 
-  const winnerBase = pickBaseUnits(winnerUnits, half);
-  const loserBase = pickBaseUnits(loserUnits, half);
-  const chosen = [...winnerBase, ...loserBase];
+  const isOverdue = (u: Unit): boolean =>
+    u.ids.some((id) => (byId(s, id)?.neutralWaitRounds ?? 0) >= WIN_LOSE_NEUTRAL_FLOOR_ROUNDS);
+  const priorityNeutral = pickBaseUnits(neutralUnits.filter(isOverdue), need);
+  const reservedIds = new Set(flattenUnits(priorityNeutral));
+  const seatsAfterPriority = need - reservedIds.size;
+
+  const winnerBase = pickBaseUnits(winnerUnits, Math.min(half, seatsAfterPriority));
+  const seatsAfterWinners = seatsAfterPriority - flattenUnits(winnerBase).length;
+  const loserBase = pickBaseUnits(loserUnits, Math.min(half, seatsAfterWinners));
+
+  const chosen = [...priorityNeutral, ...winnerBase, ...loserBase];
   let filled = flattenUnits(chosen).length;
 
   if (filled < need) {
     const usedIds = new Set(flattenUnits(chosen));
     const enteredAtOf = (id: string): number => byId(s, id)?.enteredAt ?? Infinity;
-    const remainderUnits = [...winnerUnits, ...loserUnits, ...neutralUnits]
+    const otherNeutral = neutralUnits.filter((u) => !u.ids.some((id) => reservedIds.has(id)));
+    const remainderUnits = [...winnerUnits, ...loserUnits, ...otherNeutral]
       .filter((u) => !u.ids.some((id) => usedIds.has(id)))
       .sort((a, b) => Math.min(...a.ids.map(enteredAtOf)) - Math.min(...b.ids.map(enteredAtOf)));
     let remaining = need - filled;
@@ -299,6 +313,18 @@ function assignEmptyCourtsWinLose(s: SessionState, rng: Rng): void {
 }
 
 /**
+ * Advance the neutral-queue fairness floor's clock: still waiting with no
+ * result yet, one round closer to a guaranteed seat; anyone else (seated, or
+ * now has a result) resets to 0 — a player who's since played is no longer
+ * the "genuine newcomer" this floor exists to protect.
+ */
+function bumpNeutralWait(s: SessionState): void {
+  for (const p of s.players) {
+    p.neutralWaitRounds = p.status === "waiting" && p.lastResult === null ? p.neutralWaitRounds + 1 : 0;
+  }
+}
+
+/**
  * Win/Lose stacking: nobody stays on court. A finished game sends its winners
  * to the back of the Winners queue and its losers to the back of the Losers
  * queue; the just-freed court (and any other currently-open court) is
@@ -318,6 +344,7 @@ const winLose: GameModeStrategy = {
       // never corrupts, the same fallback the king strategy uses.
       for (const id of [...court.teamA, ...court.teamB]) releaseFromCourt(s, id);
       s.courts[i] = null;
+      bumpNeutralWait(s);
       assignEmptyCourtsWinLose(s, rng);
       s.round += 1;
       return;
@@ -336,6 +363,7 @@ const winLose: GameModeStrategy = {
       releaseFromCourt(s, id);
     }
     s.courts[i] = null;
+    bumpNeutralWait(s);
     assignEmptyCourtsWinLose(s, rng);
     s.round += 1;
   },

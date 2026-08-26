@@ -56,6 +56,7 @@ function newPlayer(s: SessionState, name: string): Player {
     holdAfter: false,
     stackedWith: null,
     lastResult: null,
+    neutralWaitRounds: 0,
     partners: {},
     opps: {},
     streak: 0,
@@ -299,11 +300,15 @@ export function reduce(state: SessionState, action: Action, rng: Rng = Math.rand
       // Switching modes mid-session re-pools and redraws so state stays valid.
       if (s.gameMode !== action.gameMode) {
         s.gameMode = action.gameMode;
-        // Win/Lose reads lastResult from a PRIOR stint in this same mode
-        // otherwise stale — switching in must start everyone fresh, the same
-        // guarantee a brand-new joiner gets (see Player.lastResult's doc).
+        // Win/Lose reads lastResult/neutralWaitRounds from a PRIOR stint in
+        // this same mode otherwise stale — switching in must start everyone
+        // fresh, the same guarantee a brand-new joiner gets (see
+        // Player.lastResult's doc).
         if (action.gameMode === "winLose") {
-          for (const p of s.players) p.lastResult = null;
+          for (const p of s.players) {
+            p.lastResult = null;
+            p.neutralWaitRounds = 0;
+          }
         }
         if (s.started) repoolAndRedraw(s, rng);
       }

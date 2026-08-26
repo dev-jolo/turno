@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { WIN_LOSE_NEUTRAL_FLOOR_ROUNDS } from "./constants";
 import { strategyFor } from "./modes";
 import { reduce } from "./reducer";
 import { courtsView } from "./selectors";
@@ -34,6 +35,7 @@ function mk(
   status: Player["status"],
   lastResult: Player["lastResult"] = null,
   stackedWith: string | null = null,
+  neutralWaitRounds = 0,
 ): Player {
   return {
     id,
@@ -46,6 +48,7 @@ function mk(
     holdAfter: false,
     stackedWith,
     lastResult,
+    neutralWaitRounds,
     partners: {},
     opps: {},
     streak: 0,
@@ -361,5 +364,108 @@ describe("stacking integration", () => {
     expect(seatedIds(s1)).not.toContain("a");
     expect(seatedIds(s1)).not.toContain("c");
     expect(invariantErrors(s1)).toEqual([]);
+  });
+});
+
+describe("neutral queue fairness floor", () => {
+  it("a neutral player who's waited past the floor is guaranteed the next seat, preempting a fresh winner/loser pair", () => {
+    // Hand-build: n1 is one bump short of the floor (reaches it the moment
+    // this dispatch's bumpNeutralWait runs), and there's exactly enough
+    // winner/loser supply to otherwise fill the whole court WITHOUT n1 at
+    // all (w1+w2 and l1+l2 alone satisfy the ordinary half/half quotas). If
+    // the floor didn't preempt, n1 would stay waiting and l2 would seat
+    // instead — proving n1 actually bumped someone, not just filled a gap.
+    const base = winLose(1);
+    const s0: SessionState = {
+      ...base,
+      started: true,
+      seq: 1000,
+      courtsCount: 1,
+      courts: [{ teamA: ["d1", "d2"], teamB: ["d3", "d4"] }],
+      players: [
+        mk("d1", 900, "playing"),
+        mk("d2", 901, "playing"),
+        mk("d3", 902, "playing"),
+        mk("d4", 903, "playing"),
+        mk("n1", 1, "waiting", null, null, WIN_LOSE_NEUTRAL_FLOOR_ROUNDS - 1),
+        mk("w1", 2, "waiting", "win"),
+        mk("w2", 3, "waiting", "win"),
+        mk("l1", 4, "waiting", "lose"),
+        mk("l2", 5, "waiting", "lose"),
+      ],
+    };
+    const s1 = reduce(s0, { type: "FINISH_COURT", court: 0, winner: "A" }, zero);
+    expect(seatedIds(s1)).toContain("n1");
+    expect(seatedIds(s1)).not.toContain("l2"); // bumped by n1's guaranteed seat
+    expect(player(s1, "n1").status).toBe("playing");
+    expect(invariantErrors(s1)).toEqual([]);
+  });
+
+  it("a neutral player who hasn't reached the floor yet gets no priority — ordinary winner/loser competition still wins", () => {
+    // Same shape as above, but n1 is TWO bumps short: after this dispatch's
+    // single bump they're still one shy of the floor, so they must NOT
+    // preempt anyone.
+    const base = winLose(1);
+    const s0: SessionState = {
+      ...base,
+      started: true,
+      seq: 1000,
+      courtsCount: 2,
+      courts: [null, { teamA: ["d1", "d2"], teamB: ["d3", "d4"] }],
+      players: [
+        mk("d1", 900, "playing"),
+        mk("d2", 901, "playing"),
+        mk("d3", 902, "playing"),
+        mk("d4", 903, "playing"),
+        mk("n1", 1, "waiting", null, null, WIN_LOSE_NEUTRAL_FLOOR_ROUNDS - 2),
+        mk("w1", 2, "waiting", "win"),
+        mk("w2", 3, "waiting", "win"),
+        mk("l1", 4, "waiting", "lose"),
+        mk("l2", 5, "waiting", "lose"),
+      ],
+    };
+    const s1 = reduce(s0, { type: "FINISH_COURT", court: 1, winner: "A" }, zero);
+    expect(seatedIds(s1)).not.toContain("n1");
+    expect(seatedIds(s1)).toEqual(expect.arrayContaining(["w1", "w2", "l1", "l2"]));
+    expect(invariantErrors(s1)).toEqual([]);
+  });
+
+  it("a stacked pair reserved by the floor is seated together, never split, even though only one half is overdue", () => {
+    const base = winLose(1);
+    const s0: SessionState = {
+      ...base,
+      started: true,
+      seq: 1000,
+      courtsCount: 2,
+      courts: [null, { teamA: ["d1", "d2"], teamB: ["d3", "d4"] }],
+      players: [
+        mk("d1", 900, "playing"),
+        mk("d2", 901, "playing"),
+        mk("d3", 902, "playing"),
+        mk("d4", 903, "playing"),
+        mk("n1", 1, "waiting", null, "n2", WIN_LOSE_NEUTRAL_FLOOR_ROUNDS - 1), // overdue half
+        mk("n2", 1, "waiting", null, "n1"), // not itself overdue, but stacked with n1
+        mk("w1", 2, "waiting", "win"),
+        mk("l1", 3, "waiting", "lose"),
+      ],
+    };
+    const s1 = reduce(s0, { type: "FINISH_COURT", court: 1, winner: "A" }, zero);
+    expect(seatedIds(s1)).toEqual(expect.arrayContaining(["n1", "n2"]));
+    expect(invariantErrors(s1)).toEqual([]);
+  });
+
+  it("increments a stalled neutral player's wait count every round until the floor guarantees them a seat", () => {
+    let s = winLose(6, 1); // 4 playing, 2 waiting neutral (never touched by an exactly-balanced 1-court cycle)
+    const stalled = seatedIds(s).length === 4 ? s.players.find((p) => p.status === "waiting") : undefined;
+    if (!stalled) throw new Error("expected two neutral players waiting at session start");
+    for (let round = 1; round < WIN_LOSE_NEUTRAL_FLOOR_ROUNDS; round++) {
+      s = reduce(s, { type: "FINISH_COURT", court: 0, winner: "A" }, zero);
+      expect(player(s, stalled.id).status).toBe("waiting"); // still stalled, below the floor
+      expect(player(s, stalled.id).neutralWaitRounds).toBe(round);
+    }
+    // One more round-completion crosses the floor.
+    s = reduce(s, { type: "FINISH_COURT", court: 0, winner: "A" }, zero);
+    expect(player(s, stalled.id).status).toBe("playing");
+    expect(invariantErrors(s)).toEqual([]);
   });
 });
