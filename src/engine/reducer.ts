@@ -69,6 +69,7 @@ function addPlayers(s: SessionState, names: string[]): void {
 }
 
 function removePlayer(s: SessionState, id: string): void {
+  clearStack(s, id); // don't leave a former partner referencing a removed player
   for (const c of s.courts) {
     if (c) {
       c.teamA = c.teamA.filter((x) => x !== id);
@@ -317,6 +318,10 @@ export function reduce(state: SessionState, action: Action, rng: Rng = Math.rand
       break;
     case "SET_STACK":
       setStack(s, action.a, action.b);
+      if (s.started) assignEmptyCourts(s, rng);
+      break;
+    case "UNSTACK":
+      clearStack(s, action.id);
       if (s.started) assignEmptyCourts(s, rng);
       break;
     default: {

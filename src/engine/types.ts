@@ -99,6 +99,7 @@ export type Action =
   | { type: "CLEAR_COURT"; court: number }
   | { type: "SUBSTITUTE_PLAYER"; court: number; outId: string; inId?: string }
   | { type: "SET_STACK"; a: string; b: string }
+  | { type: "UNSTACK"; id: string }
   | { type: "MIX_ALL" }
   | { type: "RESET" };
 

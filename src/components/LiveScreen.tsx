@@ -118,6 +118,16 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
                       Stack…
                     </Button>
                   )}
+                  {stackingAvailable && p.stackedWith && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => dispatch({ type: "UNSTACK", id: p.id })}
+                      title={`Unstack from ${stackedName}`}
+                    >
+                      Unstack
+                    </Button>
+                  )}
                   <Button
                     variant="warm"
                     size="sm"

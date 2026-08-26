@@ -95,6 +95,46 @@ describe("set stack", () => {
   });
 });
 
+describe("unstack", () => {
+  it("clears the link on both sides", () => {
+    let s = session(6);
+    s = reduce(s, { type: "SET_STACK", a: "p1", b: "p2" }, zero);
+    s = reduce(s, { type: "UNSTACK", id: "p1" }, zero);
+    expect(player(s, "p1").stackedWith).toBeNull();
+    expect(player(s, "p2").stackedWith).toBeNull();
+  });
+
+  it("no-ops for a player who isn't stacked", () => {
+    const s0 = session(6);
+    expect(reduce(s0, { type: "UNSTACK", id: "p1" }, zero)).toEqual(s0);
+  });
+
+  it("no-ops for an unknown id", () => {
+    const s0 = session(6);
+    expect(reduce(s0, { type: "UNSTACK", id: "does-not-exist" }, zero)).toEqual(s0);
+  });
+});
+
+describe("removal cleanup", () => {
+  it("clears the remaining partner's link when a stacked player is permanently removed", () => {
+    let s = session(6);
+    s = reduce(s, { type: "SET_STACK", a: "p1", b: "p2" }, zero);
+    s = reduce(s, { type: "REMOVE_PLAYER", id: "p1" }, zero);
+    expect(s.players.some((p) => p.id === "p1")).toBe(false);
+    expect(player(s, "p2").stackedWith).toBeNull();
+  });
+
+  it("leaves everyone else's links untouched", () => {
+    let s = session(8, { courts: 2 });
+    s = reduce(s, { type: "SET_STACK", a: "p1", b: "p2" }, zero);
+    s = reduce(s, { type: "SET_STACK", a: "p3", b: "p4" }, zero);
+    s = reduce(s, { type: "REMOVE_PLAYER", id: "p1" }, zero);
+    expect(player(s, "p2").stackedWith).toBeNull();
+    expect(player(s, "p3").stackedWith).toBe("p4");
+    expect(player(s, "p4").stackedWith).toBe("p3");
+  });
+});
+
 describe("guaranteed pairing", () => {
   it("a stacked pair is always selected together, never one without the other", () => {
     const s0 = session(6); // 4 playing, 2 waiting
