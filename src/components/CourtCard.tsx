@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import type { CourtView } from "@/engine";
 import type { Format, GameMode, Player, Winner } from "@/engine";
 import { cn } from "@/lib/utils";
+import { Repeat } from "lucide-react";
 
 interface CourtCardProps {
   court: CourtView;
@@ -11,9 +12,20 @@ interface CourtCardProps {
   waitingCount: number;
   onFinish: (winner?: Winner) => void;
   onClear: () => void;
+  onSubstitute: (playerId: string) => void;
 }
 
-function PlayerLine({ player, alignRight }: { player: Player; alignRight?: boolean }) {
+function PlayerLine({
+  player,
+  alignRight,
+  canSubstitute,
+  onSubstitute,
+}: {
+  player: Player;
+  alignRight?: boolean;
+  canSubstitute: boolean;
+  onSubstitute: () => void;
+}) {
   const games = <span className="font-mono text-[11px] text-muted">{player.games}g</span>;
   return (
     <div
@@ -24,6 +36,19 @@ function PlayerLine({ player, alignRight }: { player: Player; alignRight?: boole
     >
       <span className="truncate">{player.name}</span>
       {games}
+      <button
+        type="button"
+        onClick={onSubstitute}
+        disabled={!canSubstitute}
+        title={
+          canSubstitute
+            ? `Sub out ${player.name} — bring on the next fairest waiting player`
+            : "No one waiting to sub in — use Clear instead"
+        }
+        className="grid size-6 shrink-0 place-items-center rounded-md text-muted transition-colors hover:bg-white/10 hover:text-line disabled:pointer-events-none disabled:opacity-40"
+      >
+        <Repeat className="size-3.5" />
+      </button>
     </div>
   );
 }
@@ -32,10 +57,14 @@ function TeamSide({
   label,
   players,
   alignRight,
+  canSubstitute,
+  onSubstitute,
 }: {
   label: string;
   players: Player[];
   alignRight?: boolean;
+  canSubstitute: boolean;
+  onSubstitute: (playerId: string) => void;
 }) {
   return (
     <div
@@ -46,7 +75,13 @@ function TeamSide({
     >
       <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">{label}</span>
       {players.map((p) => (
-        <PlayerLine key={p.id} player={p} alignRight={alignRight} />
+        <PlayerLine
+          key={p.id}
+          player={p}
+          alignRight={alignRight}
+          canSubstitute={canSubstitute}
+          onSubstitute={() => onSubstitute(p.id)}
+        />
       ))}
     </div>
   );
@@ -60,8 +95,10 @@ export function CourtCard({
   waitingCount,
   onFinish,
   onClear,
+  onSubstitute,
 }: CourtCardProps) {
   const isSingles = format === "singles";
+  const canSubstitute = waitingCount > 0;
   const sideLabel = isSingles ? ["Player", "Player"] : ["Team A", "Team B"];
 
   if (!court.occupied) {
@@ -108,8 +145,19 @@ export function CourtCard({
       </div>
 
       <div className="court-net relative grid min-h-[118px] grid-cols-2 bg-surface-2">
-        <TeamSide label={sideLabel[0]} players={court.teamA} />
-        <TeamSide label={sideLabel[1]} players={court.teamB} alignRight />
+        <TeamSide
+          label={sideLabel[0]}
+          players={court.teamA}
+          canSubstitute={canSubstitute}
+          onSubstitute={onSubstitute}
+        />
+        <TeamSide
+          label={sideLabel[1]}
+          players={court.teamB}
+          alignRight
+          canSubstitute={canSubstitute}
+          onSubstitute={onSubstitute}
+        />
       </div>
 
       <div className="flex gap-2 border-t border-white/10 p-3">

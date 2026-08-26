@@ -51,6 +51,9 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
             waitingCount={queue.length}
             onFinish={(winner) => finish(court.index, winner)}
             onClear={() => dispatch({ type: "CLEAR_COURT", court: court.index })}
+            onSubstitute={(outId) =>
+              dispatch({ type: "SUBSTITUTE_PLAYER", court: court.index, outId })
+            }
           />
         ))}
       </div>

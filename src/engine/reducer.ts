@@ -16,6 +16,7 @@ import {
   playersPerCourt,
   queueGames,
   recordHistory,
+  waitingSorted,
 } from "./helpers";
 import { strategyFor } from "./modes";
 import type { Action, Format, Player, Rng, SessionState } from "./types";
@@ -176,6 +177,38 @@ function clearCourt(s: SessionState, i: number, rng: Rng): void {
 }
 
 /**
+ * Swap one seat on an active court, immediately, without ending the game for
+ * the other occupants. `inId` omitted picks the fairest currently-waiting
+ * player (automatic); `inId` provided must name a currently-waiting player
+ * (manual). No-ops (leaves state untouched) if the court/outgoing player isn't
+ * actually seated there, if a manual `inId` isn't waiting, or if nobody is
+ * waiting to fill the seat.
+ */
+function substitutePlayer(s: SessionState, court: number, outId: string, inId: string | undefined): void {
+  const c = s.courts[court];
+  if (!c) return;
+  const onTeamA = c.teamA.includes(outId);
+  const onTeamB = c.teamB.includes(outId);
+  if (!onTeamA && !onTeamB) return;
+
+  const out = byId(s, outId);
+  if (!out) return;
+
+  const incoming = inId ? byId(s, inId) : waitingSorted(s)[0];
+  if (!incoming || incoming.status !== "waiting") return;
+
+  if (onTeamA) c.teamA = c.teamA.map((id) => (id === outId ? incoming.id : id));
+  else c.teamB = c.teamB.map((id) => (id === outId ? incoming.id : id));
+
+  out.status = "hold";
+  out.holdAfter = false;
+  out.streak = 0;
+
+  incoming.status = "playing";
+  incoming.streak = 0;
+}
+
+/**
  * Mix all courts: count every in-progress game as done, re-pool everyone, and
  * redraw all courts together for maximum cross-court mixing.
  */
@@ -245,6 +278,9 @@ export function reduce(state: SessionState, action: Action, rng: Rng = Math.rand
       break;
     case "CLEAR_COURT":
       clearCourt(s, action.court, rng);
+      break;
+    case "SUBSTITUTE_PLAYER":
+      substitutePlayer(s, action.court, action.outId, action.inId);
       break;
     case "MIX_ALL":
       mixAll(s, rng);
