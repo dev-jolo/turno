@@ -21,6 +21,30 @@ function player(s: SessionState, id: string): Player {
   return p;
 }
 
+/** Hand-build a fully-formed Player for precise fixture-based tests. */
+function mk(
+  id: string,
+  enteredAt: number,
+  status: Player["status"],
+  lastResult: Player["lastResult"] = null,
+): Player {
+  return {
+    id,
+    name: id,
+    games: 0,
+    seed: 0,
+    status,
+    enteredAt,
+    lastGameRound: 0,
+    holdAfter: false,
+    stackedWith: null,
+    lastResult,
+    partners: {},
+    opps: {},
+    streak: 0,
+  };
+}
+
 describe("game-mode strategy interface", () => {
   it("winLose needs a winner", () => {
     expect(strategyFor("winLose").needsWinner).toBe(true);
@@ -80,26 +104,6 @@ describe("win/lose stacking", () => {
     // supply first, leaving the previously-empty court needing backfill from
     // a lone leftover winner plus the neutral (never-played) pool.
     const base = winLose(1); // shell only, overwritten below
-    const mk = (
-      id: string,
-      enteredAt: number,
-      status: Player["status"],
-      lastResult: Player["lastResult"] = null,
-    ): Player => ({
-      id,
-      name: id,
-      games: 0,
-      seed: 0,
-      status,
-      enteredAt,
-      lastGameRound: 0,
-      holdAfter: false,
-      stackedWith: null,
-      lastResult,
-      partners: {},
-      opps: {},
-      streak: 0,
-    });
     const s0: SessionState = {
       ...base,
       started: true,
@@ -120,6 +124,43 @@ describe("win/lose stacking", () => {
     expect(seatedIds(s1).length).toBe(8); // every player seated, nobody left waiting
     expect(seatedIds(s1)).toContain("p5"); // the lone pre-existing winner is never stranded
     for (const id of ["p6", "p7", "p8"]) expect(seatedIds(s1)).toContain(id);
+    expect(invariantErrors(s1)).toEqual([]);
+  });
+
+  it("picks the two longest-waiting players in a crowded queue, not just any two", () => {
+    // Hand-build: 1 empty court, and a queue with THREE waiting winners (more
+    // than the 2 a match needs) at very low (old) enteredAt stamps, plus a
+    // dummy court about to finish whose own winners land with much higher
+    // (newer) stamps. Only the two oldest pre-existing winners — never the
+    // newest one, never a fresh arrival — should be pulled.
+    const base = winLose(1); // shell only, overwritten below
+    const s0: SessionState = {
+      ...base,
+      started: true,
+      seq: 1000, // released dummy players land far newer than every hand-built stamp below
+      courtsCount: 2,
+      courts: [null, { teamA: ["p1", "p2"], teamB: ["p3", "p4"] }],
+      players: [
+        mk("p1", 900, "playing"),
+        mk("p2", 901, "playing"),
+        mk("p3", 902, "playing"),
+        mk("p4", 903, "playing"),
+        mk("w-oldest", 1, "waiting", "win"),
+        mk("w-middle", 2, "waiting", "win"),
+        mk("w-newest", 3, "waiting", "win"), // must be passed over — not the two oldest
+        mk("l-oldest", 4, "waiting", "lose"),
+        mk("l-middle", 5, "waiting", "lose"),
+        mk("l-newest", 6, "waiting", "lose"), // must be passed over too
+      ],
+    };
+    const s1 = reduce(s0, { type: "FINISH_COURT", court: 1, winner: "A" }, zero);
+    const court0Ids = new Set([...courtsView(s1)[0].teamA, ...courtsView(s1)[0].teamB].map((p) => p.id));
+    expect(court0Ids.has("w-oldest")).toBe(true);
+    expect(court0Ids.has("w-middle")).toBe(true);
+    expect(court0Ids.has("w-newest")).toBe(false);
+    expect(court0Ids.has("l-oldest")).toBe(true);
+    expect(court0Ids.has("l-middle")).toBe(true);
+    expect(court0Ids.has("l-newest")).toBe(false);
     expect(invariantErrors(s1)).toEqual([]);
   });
 
