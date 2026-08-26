@@ -327,4 +327,39 @@ describe("stacking integration", () => {
     expect(player(s1, "d2").status).toBe("waiting");
     expect(invariantErrors(s1)).toEqual([]);
   });
+
+  it("a reunited pair takes its NEWER member's queue position, not the long-dormant one's", () => {
+    // Hand-build: "a" has been a dormant winner since enteredAt=1 (partner "c"
+    // was mid-game the whole time). m1/m2 are ordinary winners who arrived
+    // later (5, 6). The one court is about to finish with "c" winning too —
+    // reuniting the pair, with just enough total supply for THIS ONE match,
+    // so m1/m2 and the reunited pair are in genuine competition for it. If the
+    // pair inherited "a"'s stale enteredAt=1, it would wrongly leapfrog
+    // m1/m2 for this match; it must instead take "c"'s fresh position, losing
+    // that competition and leaving m1/m2 seated instead.
+    const base = winLose(1);
+    const s0: SessionState = {
+      ...base,
+      started: true,
+      seq: 1000, // released "c"/"c2" land far newer than every hand-built stamp below
+      courtsCount: 1,
+      courts: [{ teamA: ["c", "c2"], teamB: ["c3", "c4"] }],
+      players: [
+        mk("c", 900, "playing", null, "a"),
+        mk("c2", 901, "playing"),
+        mk("c3", 902, "playing"),
+        mk("c4", 903, "playing"),
+        mk("a", 1, "waiting", "win", "c"), // long-dormant, oldest stamp by far
+        mk("m1", 5, "waiting", "win"),
+        mk("m2", 6, "waiting", "win"),
+        mk("l1", 2, "waiting", "lose"),
+        mk("l2", 3, "waiting", "lose"),
+      ],
+    };
+    const s1 = reduce(s0, { type: "FINISH_COURT", court: 0, winner: "A" }, zero);
+    expect(seatedIds(s1)).toEqual(expect.arrayContaining(["m1", "m2"]));
+    expect(seatedIds(s1)).not.toContain("a");
+    expect(seatedIds(s1)).not.toContain("c");
+    expect(invariantErrors(s1)).toEqual([]);
+  });
 });

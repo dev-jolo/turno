@@ -160,17 +160,6 @@ const king: GameModeStrategy = {
 };
 
 /**
- * Waiting players belonging to one Win/Lose queue, FIFO — longest-waiting
- * first. Not fairness-weighted (no `games`/`seed`): a player's position here
- * is purely "how long since the result that put them in this queue."
- */
-function winLoseQueueSorted(s: SessionState, result: Player["lastResult"]): Player[] {
-  return s.players
-    .filter((p) => p.status === "waiting" && p.lastResult === result)
-    .sort((a, b) => a.enteredAt - b.enteredAt);
-}
-
-/**
  * Win/Lose analogue of `activeStackPartner`: both currently waiting AND
  * sharing the SAME queue (`lastResult`) — a stacked pair split across
  * different results doesn't force-pair here, see `winLoseStackPartnerUnavailable`.
@@ -182,6 +171,32 @@ function activeWinLoseStackPartner(s: SessionState, p: Player): Player | undefin
     return undefined;
   }
   return partner;
+}
+
+/**
+ * A stacked pair's shared queue position: the LATER of the two members'
+ * `enteredAt` stamps, same "less caught-up member decides" spirit as
+ * `effectiveQueueGames` for the fairness queue. Without this, a pair that
+ * just reunited (one half freshly arrived, the other long-dormant waiting
+ * for them) would inherit the dormant half's stale, much-older stamp and
+ * leapfrog everyone who'd been waiting in between — exactly the kind of
+ * queue-jump `effectiveQueueGames`'s own `Math.max` exists to prevent.
+ */
+function effectiveWinLoseEnteredAt(s: SessionState, p: Player): number {
+  const partner = activeWinLoseStackPartner(s, p);
+  return partner ? Math.max(p.enteredAt, partner.enteredAt) : p.enteredAt;
+}
+
+/**
+ * Waiting players belonging to one Win/Lose queue, FIFO — longest-waiting
+ * first. Not fairness-weighted by games/seed like the main queue; a solo
+ * player's position is purely "how long since the result that put them in
+ * this queue," and a stacked pair's is `effectiveWinLoseEnteredAt`.
+ */
+function winLoseQueueSorted(s: SessionState, result: Player["lastResult"]): Player[] {
+  return s.players
+    .filter((p) => p.status === "waiting" && p.lastResult === result)
+    .sort((a, b) => effectiveWinLoseEnteredAt(s, a) - effectiveWinLoseEnteredAt(s, b));
 }
 
 /**
