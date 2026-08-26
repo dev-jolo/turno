@@ -248,11 +248,13 @@ function winLoseUnits(s: SessionState, result: Player["lastResult"]): Unit[] {
  * Assemble the next Win/Lose match for one court: two players from the
  * Winners queue, two from the Losers queue, taken in stacking-respecting
  * UNITS (a stacked pair is always pulled — and later seated — together, see
- * `bestWinLoseSplit`). Before that, any neutral-queue unit that's waited past
- * `WIN_LOSE_NEUTRAL_FLOOR_ROUNDS` is reserved a seat first — guaranteed ahead
- * of the Winners/Losers cycle, not merely eligible for the ordinary
- * backfill — so a newcomer can't be passed over indefinitely; the ordinary
- * half-quotas then fill whatever seats remain. If either queue still can't
+ * `bestWinLoseSplit`). Before that, EVERY neutral-queue unit that's waited
+ * past `WIN_LOSE_NEUTRAL_FLOOR_ROUNDS` is reserved a seat first (not just
+ * one) — guaranteed ahead of the Winners/Losers cycle, not merely eligible
+ * for the ordinary backfill — so a newcomer can't be passed over
+ * indefinitely; the ordinary half-quotas then fill whatever seats remain,
+ * which can squeeze one side (or both) well below its usual half if several
+ * units cross the floor in the same round. If either queue still can't
  * supply its share, the shortfall is backfilled from whichever remaining
  * units — the other queue's overflow, or any other neutral player — have
  * waited longest, rather than preferring one source over another; a unit
@@ -341,10 +343,13 @@ const winLose: GameModeStrategy = {
 
     if (winner !== "A" && winner !== "B") {
       // Shouldn't happen via the UI — fall back to a plain release so state
-      // never corrupts, the same fallback the king strategy uses.
+      // never corrupts, the same fallback the king strategy uses. No
+      // bumpNeutralWait here: releaseFromCourt doesn't set lastResult in this
+      // branch, so anyone coming off THIS court would still read as
+      // "neutral" and wrongly get credited a wait-round for time they spent
+      // playing, not waiting.
       for (const id of [...court.teamA, ...court.teamB]) releaseFromCourt(s, id);
       s.courts[i] = null;
-      bumpNeutralWait(s);
       assignEmptyCourtsWinLose(s, rng);
       s.round += 1;
       return;

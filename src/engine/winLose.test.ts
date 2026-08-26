@@ -431,13 +431,20 @@ describe("neutral queue fairness floor", () => {
   });
 
   it("a stacked pair reserved by the floor is seated together, never split, even though only one half is overdue", () => {
+    // Single court, and — critically — enough NON-neutral supply (w1 + the
+    // dummy's own fresh d1/d2 winners; l1 + fresh d3/d4 losers) to fill the
+    // whole match on its own without ever touching n1/n2. Without the floor
+    // reservation, the ordinary half/half quotas would seat w1+d1+l1+d3 (or
+    // equivalent) and leave n1/n2 waiting; proving n1+n2 ARE seated (and l1
+    // is bumped) shows the floor genuinely preempted the ordinary pick, not
+    // that they slipped in via the pre-existing backfill path.
     const base = winLose(1);
     const s0: SessionState = {
       ...base,
       started: true,
       seq: 1000,
-      courtsCount: 2,
-      courts: [null, { teamA: ["d1", "d2"], teamB: ["d3", "d4"] }],
+      courtsCount: 1,
+      courts: [{ teamA: ["d1", "d2"], teamB: ["d3", "d4"] }],
       players: [
         mk("d1", 900, "playing"),
         mk("d2", 901, "playing"),
@@ -449,8 +456,9 @@ describe("neutral queue fairness floor", () => {
         mk("l1", 3, "waiting", "lose"),
       ],
     };
-    const s1 = reduce(s0, { type: "FINISH_COURT", court: 1, winner: "A" }, zero);
+    const s1 = reduce(s0, { type: "FINISH_COURT", court: 0, winner: "A" }, zero);
     expect(seatedIds(s1)).toEqual(expect.arrayContaining(["n1", "n2"]));
+    expect(seatedIds(s1)).not.toContain("l1"); // bumped by the reserved pair
     expect(invariantErrors(s1)).toEqual([]);
   });
 

@@ -49,7 +49,8 @@ export const MIN_COURTS = 1;
 export const MAX_COURTS = 4;
 
 /* ------------------------------------------------------------------ *
- * Win/Lose stacking defaults.
+ * Win/Lose neutral-queue fairness floor.
+ * DECISION: this is a product default — confirm with product owner.
  * ------------------------------------------------------------------ */
 
 /**
@@ -57,6 +58,5 @@ export const MAX_COURTS = 4;
  * this many round-completions without a result is guaranteed the next open
  * seat, ahead of continuing to pull fresh Winners/Losers pairs — so a
  * genuine newcomer can never be passed over indefinitely.
- * confirm with product owner
  */
 export const WIN_LOSE_NEUTRAL_FLOOR_ROUNDS = 3;
