@@ -53,6 +53,12 @@ export function courtsView(state: SessionState): CourtView[] {
   return views;
 }
 
+/** Which court (1-based, for display) a player is currently seated on, if any. */
+export function courtNumberOf(courts: CourtView[], id: string): number | null {
+  const court = courts.find((c) => c.occupied && [...c.teamA, ...c.teamB].some((p) => p.id === id));
+  return court ? court.index + 1 : null;
+}
+
 export function playingCount(state: SessionState): number {
   return state.courts.reduce((sum, c) => sum + (c ? c.teamA.length + c.teamB.length : 0), 0);
 }

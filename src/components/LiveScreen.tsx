@@ -3,8 +3,9 @@ import { Eyebrow, PickerPanel } from "@/components/controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Action, CourtView, Player, SessionState, Winner } from "@/engine";
-import { courtsView, onHold, playersPerCourt, playingCount, waitingQueue } from "@/engine";
+import { courtNumberOf, courtsView, onHold, playersPerCourt, playingCount, waitingQueue } from "@/engine";
 import { Pause } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 
 interface LiveScreenProps {
@@ -24,33 +25,30 @@ function nameOf(state: SessionState, id: string | null): string | null {
   return state.players.find((p) => p.id === id)?.name ?? null;
 }
 
-/** Which court (1-based, for display) a player is currently seated on, if any. */
-function courtNumberOf(courts: CourtView[], id: string): number | null {
-  const court = courts.find((c) => c.occupied && [...c.teamA, ...c.teamB].some((p) => p.id === id));
-  return court ? court.index + 1 : null;
+function Hint({ tone, children }: { tone: "sage" | "muted"; children: ReactNode }) {
+  // Keep both class names as full literal strings (not interpolated
+  // fragments) so Tailwind's build-time scanner can find them.
+  const color = tone === "sage" ? "text-sage" : "text-muted";
+  return <span className={`font-mono text-[11px] ${color}`}>{children}</span>;
 }
 
 /** A stack candidate's status hint: an existing stack takes priority over a
  * plain status note, since the reassignment consequence matters more than
  * where they currently are. */
 function candidateHint(state: SessionState, courts: CourtView[], forId: string, candidate: Player) {
-  if (candidate.stackedWith === forId) {
-    return <span className="font-mono text-[11px] text-sage">stacked</span>;
-  }
+  if (candidate.stackedWith === forId) return <Hint tone="sage">stacked</Hint>;
   if (candidate.stackedWith) {
-    return (
-      <span className="font-mono text-[11px] text-muted">
-        stacked with {nameOf(state, candidate.stackedWith)}
-      </span>
-    );
+    return <Hint tone="muted">stacked with {nameOf(state, candidate.stackedWith)}</Hint>;
   }
   if (candidate.status === "playing") {
     const court = courtNumberOf(courts, candidate.id);
-    return <span className="font-mono text-[11px] text-muted">Court {court}</span>;
+    // courtNumberOf should always resolve for a "playing" player — this
+    // fallback is defensive against that invariant ever slipping, so the
+    // hint degrades to a plain label instead of a broken "Court" with
+    // nothing after it.
+    return <Hint tone="muted">{court ? `Court ${court}` : "on court"}</Hint>;
   }
-  if (candidate.status === "hold") {
-    return <span className="font-mono text-[11px] text-muted">on hold</span>;
-  }
+  if (candidate.status === "hold") return <Hint tone="muted">on hold</Hint>;
   return undefined;
 }
 
