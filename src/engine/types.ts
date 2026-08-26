@@ -52,6 +52,14 @@ export interface Player {
   lastGameRound: number;
   /** If true and currently playing: bench this player after the current game. */
   holdAfter: boolean;
+  /**
+   * Stacking: the id of this player's pinned partner, or null. Symmetric — if
+   * A.stackedWith is B, B.stackedWith is always A. Persists even while one of
+   * the pair is on hold, removed-from-the-effect (singles format), or the
+   * partner id no longer resolves; the SELECTION algorithm is what decides
+   * whether the link is currently "active" (see `helpers.ts`), not this field.
+   */
+  stackedWith: string | null;
   /** Map of partnerId -> times partnered. */
   partners: Record<string, number>;
   /** Map of opponentId -> times opposed. */
@@ -90,6 +98,7 @@ export type Action =
   | { type: "FINISH_COURT"; court: number; winner?: Winner }
   | { type: "CLEAR_COURT"; court: number }
   | { type: "SUBSTITUTE_PLAYER"; court: number; outId: string; inId?: string }
+  | { type: "SET_STACK"; a: string; b: string }
   | { type: "MIX_ALL" }
   | { type: "RESET" };
 

@@ -54,6 +54,7 @@ function newPlayer(s: SessionState, name: string): Player {
     enteredAt: stamp,
     lastGameRound: 0,
     holdAfter: false,
+    stackedWith: null,
     partners: {},
     opps: {},
     streak: 0,
@@ -104,6 +105,33 @@ function returnPlayer(s: SessionState, id: string): void {
   p.seed = targetQueue - p.games;
   p.enteredAt = s.seq++;
   p.streak = 0;
+}
+
+/** Clear a player's stack link and their partner's, symmetrically. No-op if unset. */
+function clearStack(s: SessionState, id: string): void {
+  const p = byId(s, id);
+  if (!p || !p.stackedWith) return;
+  const partner = byId(s, p.stackedWith);
+  if (partner) partner.stackedWith = null;
+  p.stackedWith = null;
+}
+
+/**
+ * Pin two players as permanent partners. Reassigning either player to a new
+ * partner clears their old link (on both sides) as part of the same action —
+ * there's no separate "unstack first" step. No-op in singles (no partner slot
+ * to pin) or if either id doesn't resolve to a real player.
+ */
+function setStack(s: SessionState, aId: string, bId: string): void {
+  if (s.format === "singles") return;
+  if (aId === bId) return;
+  const a = byId(s, aId);
+  const b = byId(s, bId);
+  if (!a || !b) return;
+  clearStack(s, aId);
+  clearStack(s, bId);
+  a.stackedWith = bId;
+  b.stackedWith = aId;
 }
 
 function setCourts(s: SessionState, count: number, rng: Rng): void {
@@ -286,6 +314,10 @@ export function reduce(state: SessionState, action: Action, rng: Rng = Math.rand
       break;
     case "MIX_ALL":
       mixAll(s, rng);
+      break;
+    case "SET_STACK":
+      setStack(s, action.a, action.b);
+      if (s.started) assignEmptyCourts(s, rng);
       break;
     default: {
       // Exhaustiveness guard.

@@ -19,14 +19,26 @@ function splitNames(raw: string): string[] {
     .filter(Boolean);
 }
 
+function nameOf(state: SessionState, id: string | null): string | null {
+  if (!id) return null;
+  return state.players.find((p) => p.id === id)?.name ?? null;
+}
+
 export function LiveScreen({ state, dispatch }: LiveScreenProps) {
   const [late, setLate] = useState("");
+  const [stackPickerFor, setStackPickerFor] = useState<string | null>(null);
   const courts = courtsView(state);
   const queue = waitingQueue(state);
   const bench = onHold(state);
   const per = playersPerCourt(state);
   const playing = playingCount(state);
   const anyCourtActive = courts.some((c) => c.occupied);
+  const stackingAvailable = state.format === "doubles";
+
+  const setStack = (a: string, b: string) => {
+    dispatch({ type: "SET_STACK", a, b });
+    setStackPickerFor(null);
+  };
 
   const addLate = () => {
     const names = splitNames(late);
@@ -74,31 +86,78 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
         <ul className="flex flex-col gap-2">
           {queue.map((p, idx) => {
             const next = idx < per;
+            const stackedName = nameOf(state, p.stackedWith);
+            const pickerOpen = stackPickerFor === p.id;
+            const candidates = queue.filter((q) => q.id !== p.id);
             return (
               <li
                 key={p.id}
-                className="flex items-center gap-3 rounded-xl border border-white/10 bg-surface px-3 py-2.5"
+                className="flex flex-col gap-2 rounded-xl border border-white/10 bg-surface px-3 py-2.5"
               >
-                <span
-                  className={`grid size-6 shrink-0 place-items-center rounded-md font-mono text-xs font-bold text-[#0f1b1a] ${
-                    next ? "bg-ball" : "bg-sage"
-                  }`}
-                >
-                  {idx + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[15.5px] font-[650]">{p.name}</div>
-                  <div className="font-mono text-[11px] text-muted">
-                    {p.games} game{p.games === 1 ? "" : "s"} played
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`grid size-6 shrink-0 place-items-center rounded-md font-mono text-xs font-bold text-[#0f1b1a] ${
+                      next ? "bg-ball" : "bg-sage"
+                    }`}
+                  >
+                    {idx + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[15.5px] font-[650]">{p.name}</div>
+                    <div className="font-mono text-[11px] text-muted">
+                      {p.games} game{p.games === 1 ? "" : "s"} played
+                      {stackedName && ` · stacked with ${stackedName}`}
+                    </div>
                   </div>
+                  {stackingAvailable && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setStackPickerFor(pickerOpen ? null : p.id)}
+                    >
+                      Stack…
+                    </Button>
+                  )}
+                  <Button
+                    variant="warm"
+                    size="sm"
+                    onClick={() => dispatch({ type: "HOLD_PLAYER", id: p.id })}
+                  >
+                    Hold
+                  </Button>
                 </div>
-                <Button
-                  variant="warm"
-                  size="sm"
-                  onClick={() => dispatch({ type: "HOLD_PLAYER", id: p.id })}
-                >
-                  Hold
-                </Button>
+                {pickerOpen && (
+                  <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-surface-2 p-1.5 text-[13px]">
+                    {candidates.length > 0 ? (
+                      candidates.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setStack(p.id, c.id)}
+                          className="flex items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-white/10"
+                        >
+                          <span className="truncate">{c.name}</span>
+                          {c.stackedWith === p.id ? (
+                            <span className="font-mono text-[11px] text-sage">stacked</span>
+                          ) : c.stackedWith ? (
+                            <span className="font-mono text-[11px] text-muted">
+                              stacked with {nameOf(state, c.stackedWith)}
+                            </span>
+                          ) : null}
+                        </button>
+                      ))
+                    ) : (
+                      <p className="px-2 py-1.5 text-muted">No one else waiting.</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setStackPickerFor(null)}
+                      className="rounded-md px-2 py-1.5 text-left text-muted hover:bg-white/10"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </li>
             );
           })}
