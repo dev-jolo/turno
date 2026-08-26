@@ -14,6 +14,8 @@ import {
   bestSplit,
   bestWinLoseSplit,
   byId,
+  flattenUnits,
+  pickBaseUnits,
   playersPerCourt,
   recordHistory,
   releaseFromCourt,
@@ -21,7 +23,7 @@ import {
   teamSize,
   waitingSorted,
 } from "./helpers";
-import type { Split } from "./helpers";
+import type { Split, Unit } from "./helpers";
 import type { Court, GameMode, Player, Rng, SessionState, Winner } from "./types";
 
 export interface GameModeStrategy {
@@ -169,38 +171,106 @@ function winLoseQueueSorted(s: SessionState, result: Player["lastResult"]): Play
 }
 
 /**
+ * Win/Lose analogue of `activeStackPartner`: both currently waiting AND
+ * sharing the SAME queue (`lastResult`) — a stacked pair split across
+ * different results doesn't force-pair here, see `winLoseStackPartnerUnavailable`.
+ */
+function activeWinLoseStackPartner(s: SessionState, p: Player): Player | undefined {
+  if (s.format !== "doubles" || p.status !== "waiting" || !p.stackedWith) return undefined;
+  const partner = byId(s, p.stackedWith);
+  if (!partner || partner.status !== "waiting" || partner.lastResult !== p.lastResult) {
+    return undefined;
+  }
+  return partner;
+}
+
+/**
+ * True if a waiting player's stack partner is unavailable to pair with them
+ * for Win/Lose selection right now: playing elsewhere, or waiting in a
+ * DIFFERENT queue (a winner stacked with a player who just lost, say). Either
+ * way this player sits out selection entirely rather than being picked solo —
+ * the same "dormant until reunited" guarantee the base stacking feature
+ * already gives a partner who's mid-game (see `stackPartnerPlaying`).
+ */
+function winLoseStackPartnerUnavailable(s: SessionState, p: Player): boolean {
+  if (s.format !== "doubles" || !p.stackedWith) return false;
+  const partner = byId(s, p.stackedWith);
+  if (!partner) return false;
+  if (partner.status === "playing") return true;
+  return partner.status === "waiting" && partner.lastResult !== p.lastResult;
+}
+
+/**
+ * Group one Win/Lose queue (already FIFO-sorted) into selection units: an
+ * active stacked pair (see `activeWinLoseStackPartner`) becomes one 2-person
+ * unit, everyone else a 1-person unit — same "never split" guarantee
+ * `waitingUnits` gives the fairness queue, just scoped to one Win/Lose queue
+ * at a time. Order is preserved (a unit sits at its first member's position),
+ * so units come out still FIFO-sorted.
+ */
+function winLoseUnits(s: SessionState, result: Player["lastResult"]): Unit[] {
+  const w = winLoseQueueSorted(s, result);
+  const units: Unit[] = [];
+  const consumed = new Set<string>();
+  for (const p of w) {
+    if (consumed.has(p.id)) continue;
+    const partner = activeWinLoseStackPartner(s, p);
+    if (partner && !consumed.has(partner.id)) {
+      units.push({ ids: [p.id, partner.id] });
+      consumed.add(partner.id);
+    } else if (!winLoseStackPartnerUnavailable(s, p)) {
+      units.push({ ids: [p.id] });
+    }
+    // else: partner is mid-game or in the other queue — sit this player out
+    // until they're next reunited with their partner in the same queue.
+    consumed.add(p.id);
+  }
+  return units;
+}
+
+/**
  * Assemble the next Win/Lose match for one court: two players from the
- * Winners queue, two from the Losers queue. If either queue can't supply its
- * half, the shortfall is backfilled from whichever remaining players — the
- * other queue's overflow, or anyone with no result yet — have waited longest,
- * rather than preferring one source over another. Returns null if there
- * still aren't enough waiting players to fill the court (same convention as
+ * Winners queue, two from the Losers queue, taken in stacking-respecting
+ * UNITS (a stacked pair is always pulled — and later seated — together, see
+ * `bestWinLoseSplit`). If either queue can't supply its half, the shortfall
+ * is backfilled from whichever remaining units — the other queue's overflow,
+ * or anyone with no result yet — have waited longest, rather than preferring
+ * one source over another; a unit that doesn't fit the remaining seats is
+ * skipped, not split, same as `pickBaseUnits`. Returns null if there still
+ * aren't enough waiting players to fill the court (same convention as
  * rotating mode's `selectGroup`).
  */
 function selectWinLoseGroup(s: SessionState, rng: Rng): Split | null {
   const need = playersPerCourt(s);
   const half = need / 2;
 
-  const winners = winLoseQueueSorted(s, "win");
-  const losers = winLoseQueueSorted(s, "lose");
-  const neutral = winLoseQueueSorted(s, null);
+  const winnerUnits = winLoseUnits(s, "win");
+  const loserUnits = winLoseUnits(s, "lose");
+  const neutralUnits = winLoseUnits(s, null);
 
-  const chosen = [...winners.slice(0, half), ...losers.slice(0, half)];
+  const winnerBase = pickBaseUnits(winnerUnits, half);
+  const loserBase = pickBaseUnits(loserUnits, half);
+  const chosen = [...winnerBase, ...loserBase];
+  let filled = flattenUnits(chosen).length;
 
-  if (chosen.length < need) {
-    const used = new Set(chosen.map((p) => p.id));
-    const remainder = [...winners.slice(half), ...losers.slice(half), ...neutral]
-      .filter((p) => !used.has(p.id))
-      .sort((a, b) => a.enteredAt - b.enteredAt);
-    chosen.push(...remainder.slice(0, need - chosen.length));
+  if (filled < need) {
+    const usedIds = new Set(flattenUnits(chosen));
+    const enteredAtOf = (id: string): number => byId(s, id)?.enteredAt ?? Infinity;
+    const remainderUnits = [...winnerUnits, ...loserUnits, ...neutralUnits]
+      .filter((u) => !u.ids.some((id) => usedIds.has(id)))
+      .sort((a, b) => Math.min(...a.ids.map(enteredAtOf)) - Math.min(...b.ids.map(enteredAtOf)));
+    let remaining = need - filled;
+    for (const u of remainderUnits) {
+      if (remaining <= 0) break;
+      if (u.ids.length > remaining) continue; // doesn't fit — skip, don't split it
+      chosen.push(u);
+      remaining -= u.ids.length;
+    }
+    filled = need - remaining;
   }
 
-  if (chosen.length < need) return null;
-  return bestWinLoseSplit(
-    s,
-    chosen.map((p) => p.id),
-    rng,
-  );
+  if (filled < need) return null;
+  return bestWinLoseSplit(s, flattenUnits(chosen), rng);
 }
 
 /** Fill every open court with the next Win/Lose match. */

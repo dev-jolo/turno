@@ -95,7 +95,7 @@ export function isPlaying(s: SessionState, id: string): boolean {
 }
 
 /** One or two waiting players who must be selected together, never split. */
-interface Unit {
+export interface Unit {
   ids: string[];
 }
 
@@ -155,7 +155,7 @@ function unitCombinations(units: Unit[], need: number): Unit[][] {
   return res;
 }
 
-function flattenUnits(units: Unit[]): string[] {
+export function flattenUnits(units: Unit[]): string[] {
   return units.flatMap((u) => u.ids);
 }
 
@@ -166,7 +166,7 @@ function flattenUnits(units: Unit[]): string[] {
  * unit isn't penalized: it stayed at the front of the fairness order, so it's
  * the natural next pick once a court opens with enough room.
  */
-function pickBaseUnits(units: Unit[], need: number): Unit[] {
+export function pickBaseUnits(units: Unit[], need: number): Unit[] {
   const chosen: Unit[] = [];
   let filled = 0;
   for (const u of units) {
@@ -283,15 +283,17 @@ export function bestSplit(s: SessionState, ids: string[], rng: Rng): Split {
 }
 
 /**
- * Choose a team split for Win/Lose mode: prefer a split where no team pairs
- * two players who share the same most-recent result (winner+winner or
- * loser+loser) together — the whole point of this mode is a winner paired
- * with a loser on each side. Among splits that achieve that, ties are broken
- * by the same repeat-partner/opponent cost minimization `bestSplit` uses.
- * Falls back to plain cost minimization (no result constraint) when no mixed
- * split exists — e.g. more than 2 of one result had to be pulled in to fill
- * the court — rather than failing. In singles there's no pairing at all, the
- * two players directly oppose each other.
+ * Choose a team split for Win/Lose mode: never separate a stacked pair (a
+ * hard constraint, same as `bestSplit`), and among splits that satisfy that,
+ * prefer one where no team pairs two players who share the same most-recent
+ * result (winner+winner or loser+loser) together — the whole point of this
+ * mode is a winner paired with a loser on each side. Among splits that
+ * achieve both, ties are broken by the same repeat-partner/opponent cost
+ * minimization `bestSplit` uses. Falls back to plain cost minimization (no
+ * result constraint) when no mixed split exists — e.g. more than 2 of one
+ * result had to be pulled in to fill the court — rather than failing. In
+ * singles there's no pairing at all, the two players directly oppose each
+ * other (stacking has no effect there either — see `activeStackPartner`).
  */
 export function bestWinLoseSplit(s: SessionState, ids: string[], rng: Rng): Split {
   if (teamSize(s) === 1) {
@@ -306,6 +308,7 @@ export function bestWinLoseSplit(s: SessionState, ids: string[], rng: Rng): Spli
   for (const [a, b] of DOUBLES_SPLITS) {
     const teamA = [ids[a[0]], ids[a[1]]];
     const teamB = [ids[b[0]], ids[b[1]]];
+    if (splitSeparatesStack(s, teamA, teamB)) continue;
     const cost = pairCost(s, teamA, teamB);
     if (best == null || cost < best.cost || (cost === best.cost && rng() < 0.5)) {
       best = { teamA, teamB, cost };
@@ -316,7 +319,14 @@ export function bestWinLoseSplit(s: SessionState, ids: string[], rng: Rng): Spli
       }
     }
   }
-  return bestMixed ?? (best as Split);
+  if (bestMixed) return bestMixed;
+  if (best) return best;
+  // Unreachable given unit-respecting input (see `bestSplit`) — fall back
+  // rather than throw.
+  const [a, b] = DOUBLES_SPLITS[0];
+  const teamA = [ids[a[0]], ids[a[1]]];
+  const teamB = [ids[b[0]], ids[b[1]]];
+  return { teamA, teamB, cost: pairCost(s, teamA, teamB) };
 }
 
 /**

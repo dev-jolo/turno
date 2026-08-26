@@ -21,12 +21,19 @@ function player(s: SessionState, id: string): Player {
   return p;
 }
 
+function sideOf(state: SessionState, id: string): string[] {
+  const c = state.courts.find((c) => c != null && (c.teamA.includes(id) || c.teamB.includes(id)));
+  if (!c) throw new Error("player not seated");
+  return c.teamA.includes(id) ? c.teamA : c.teamB;
+}
+
 /** Hand-build a fully-formed Player for precise fixture-based tests. */
 function mk(
   id: string,
   enteredAt: number,
   status: Player["status"],
   lastResult: Player["lastResult"] = null,
+  stackedWith: string | null = null,
 ): Player {
   return {
     id,
@@ -37,7 +44,7 @@ function mk(
     enteredAt,
     lastGameRound: 0,
     holdAfter: false,
-    stackedWith: null,
+    stackedWith,
     lastResult,
     partners: {},
     opps: {},
@@ -224,5 +231,100 @@ describe("win/lose stacking", () => {
       s = reduce(s, { type: "FINISH_COURT", court, winner: i % 2 === 0 ? "A" : "B" }, zero);
       expect(invariantErrors(s)).toEqual([]);
     }
+  });
+});
+
+describe("stacking integration", () => {
+  it("a stacked pair is always seated on the same team, overriding the winner/loser mixing preference", () => {
+    let s = winLose(6, 1); // 4 playing, 2 waiting
+    const [w1, w2] = courtsView(s)[0].teamA.map((p) => p.id); // about to win
+    s = reduce(s, { type: "SET_STACK", a: w1, b: w2 }, zero);
+    s = reduce(s, { type: "FINISH_COURT", court: 0, winner: "A" }, zero); // w1,w2 win together
+    expect(sideOf(s, w1)).toContain(w2);
+    expect(invariantErrors(s)).toEqual([]);
+  });
+
+  it("two separate stacked pairs pulled into the same match each become one team", () => {
+    let s = winLose(8, 1); // 4 playing, 4 waiting
+    const view = courtsView(s)[0];
+    const [w1, w2] = view.teamA.map((p) => p.id); // about to win, stacked together
+    const [l1, l2] = view.teamB.map((p) => p.id); // about to lose, stacked together
+    s = reduce(s, { type: "SET_STACK", a: w1, b: w2 }, zero);
+    s = reduce(s, { type: "SET_STACK", a: l1, b: l2 }, zero);
+    s = reduce(s, { type: "FINISH_COURT", court: 0, winner: "A" }, zero);
+    expect(seatedIds(s)).toEqual(expect.arrayContaining([w1, w2, l1, l2]));
+    expect(sideOf(s, w1)).toContain(w2);
+    expect(sideOf(s, l1)).toContain(l2);
+    expect(invariantErrors(s)).toEqual([]);
+  });
+
+  it("a stacked pair split across different queues is not force-matched — it goes dormant instead", () => {
+    // Hand-build: a and c are stacked, but a just won and c just lost — both
+    // "waiting", different queues. w2/l2 are plain backup winner/loser
+    // candidates, older than the fresh winners/losers a dummy court (about to
+    // finish) will produce. If a/c were wrongly force-paired, the freed court
+    // would seat them together instead of w2/l2; proving it seats w2/l2 (and
+    // leaves a, c untouched) is proof the dormancy actually fired.
+    const base = winLose(1);
+    const s0: SessionState = {
+      ...base,
+      started: true,
+      seq: 1000, // released dummy players land far newer than every stamp below
+      courtsCount: 2,
+      courts: [null, { teamA: ["d1", "d2"], teamB: ["d3", "d4"] }],
+      players: [
+        mk("d1", 900, "playing"),
+        mk("d2", 901, "playing"),
+        mk("d3", 902, "playing"),
+        mk("d4", 903, "playing"),
+        mk("a", 1, "waiting", "win", "c"),
+        mk("c", 1, "waiting", "lose", "a"),
+        mk("w2", 2, "waiting", "win"),
+        mk("l2", 2, "waiting", "lose"),
+      ],
+    };
+    const s1 = reduce(s0, { type: "FINISH_COURT", court: 1, winner: "A" }, zero);
+    const seatedOnCourt0 = [...courtsView(s1)[0].teamA, ...courtsView(s1)[0].teamB].map((p) => p.id);
+    expect(seatedOnCourt0).toEqual(expect.arrayContaining(["w2", "l2"]));
+    expect(seatedOnCourt0).not.toContain("a");
+    expect(seatedOnCourt0).not.toContain("c");
+    expect(player(s1, "a").status).toBe("waiting");
+    expect(player(s1, "c").status).toBe("waiting");
+    expect(invariantErrors(s1)).toEqual([]);
+  });
+
+  it("never splits a stacked pair to fill a backfill shortfall, even when a half would fit", () => {
+    // Hand-build: two stacked winner-pairs (sw1+sw2, and d1+d2 — the latter
+    // produced fresh by a dummy court finishing) are the ONLY winner-side
+    // candidates left once the fairest solo winner (w0) is taken — leaving
+    // exactly 1 seat open for a 2-person unit. If splitting were allowed,
+    // sw1 alone could fill it, stranding sw2. Proving NEITHER court fills
+    // (rather than one of them getting split) is proof atomicity held.
+    const base = winLose(1);
+    const s0: SessionState = {
+      ...base,
+      started: true,
+      seq: 1000,
+      courtsCount: 2,
+      courts: [null, { teamA: ["d1", "d2"], teamB: ["d3", "d4"] }],
+      players: [
+        mk("d1", 900, "playing", null, "d2"),
+        mk("d2", 901, "playing", null, "d1"),
+        mk("d3", 902, "playing"),
+        mk("d4", 903, "playing"),
+        mk("w0", 0, "waiting", "win"),
+        mk("sw1", 1, "waiting", "win", "sw2"),
+        mk("sw2", 2, "waiting", "win", "sw1"),
+      ],
+    };
+    const s1 = reduce(s0, { type: "FINISH_COURT", court: 1, winner: "A" }, zero);
+    expect(courtsView(s1)[0].occupied).toBe(false);
+    expect(courtsView(s1)[1].occupied).toBe(false);
+    // Neither half of either pair got peeled off alone.
+    expect(player(s1, "sw1").status).toBe("waiting");
+    expect(player(s1, "sw2").status).toBe("waiting");
+    expect(player(s1, "d1").status).toBe("waiting");
+    expect(player(s1, "d2").status).toBe("waiting");
+    expect(invariantErrors(s1)).toEqual([]);
   });
 });
