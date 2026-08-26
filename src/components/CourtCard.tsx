@@ -160,6 +160,12 @@ export function CourtCard({
         />
       </div>
 
+      {!canSubstitute && (
+        <p className="border-t border-white/10 px-3.5 py-2 text-center text-[12px] text-muted">
+          No one waiting to sub in — use <b className="text-line">Clear</b> instead.
+        </p>
+      )}
+
       <div className="flex gap-2 border-t border-white/10 p-3">
         {gameMode === "king" ? (
           <>

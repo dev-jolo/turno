@@ -178,13 +178,12 @@ function clearCourt(s: SessionState, i: number, rng: Rng): void {
 
 /**
  * Swap one seat on an active court, immediately, without ending the game for
- * the other occupants. `inId` omitted picks the fairest currently-waiting
- * player (automatic); `inId` provided must name a currently-waiting player
- * (manual). No-ops (leaves state untouched) if the court/outgoing player isn't
- * actually seated there, if a manual `inId` isn't waiting, or if nobody is
- * waiting to fill the seat.
+ * the other occupants — filled automatically with the fairest currently-
+ * waiting player. No-ops (leaves state untouched) if the court/outgoing
+ * player isn't actually seated there, or if nobody is waiting to fill the
+ * seat.
  */
-function substitutePlayer(s: SessionState, court: number, outId: string, inId: string | undefined): void {
+function substitutePlayer(s: SessionState, court: number, outId: string): void {
   const c = s.courts[court];
   if (!c) return;
   const onTeamA = c.teamA.includes(outId);
@@ -194,8 +193,8 @@ function substitutePlayer(s: SessionState, court: number, outId: string, inId: s
   const out = byId(s, outId);
   if (!out) return;
 
-  const incoming = inId ? byId(s, inId) : waitingSorted(s)[0];
-  if (!incoming || incoming.status !== "waiting") return;
+  const incoming = waitingSorted(s)[0];
+  if (!incoming) return;
 
   if (onTeamA) c.teamA = c.teamA.map((id) => (id === outId ? incoming.id : id));
   else c.teamB = c.teamB.map((id) => (id === outId ? incoming.id : id));
@@ -280,7 +279,7 @@ export function reduce(state: SessionState, action: Action, rng: Rng = Math.rand
       clearCourt(s, action.court, rng);
       break;
     case "SUBSTITUTE_PLAYER":
-      substitutePlayer(s, action.court, action.outId, action.inId);
+      substitutePlayer(s, action.court, action.outId);
       break;
     case "MIX_ALL":
       mixAll(s, rng);

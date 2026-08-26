@@ -89,7 +89,7 @@ export type Action =
   | { type: "START_SESSION" }
   | { type: "FINISH_COURT"; court: number; winner?: Winner }
   | { type: "CLEAR_COURT"; court: number }
-  | { type: "SUBSTITUTE_PLAYER"; court: number; outId: string; inId?: string }
+  | { type: "SUBSTITUTE_PLAYER"; court: number; outId: string }
   | { type: "MIX_ALL" }
   | { type: "RESET" };
 
