@@ -161,6 +161,16 @@ describe("win/lose stacking", () => {
     expect(invariantErrors(s)).toEqual([]);
   });
 
+  it("clears stale results when switching back into this mode after a prior stint in it", () => {
+    let s = winLose(6, 1); // 4 playing, 2 waiting
+    s = reduce(s, { type: "FINISH_COURT", court: 0, winner: "A" }, zero); // records real win/lose results
+    expect(s.players.some((p) => p.lastResult != null)).toBe(true); // sanity: results exist
+    s = reduce(s, { type: "SET_GAME_MODE", gameMode: "rotating" }, zero); // step away...
+    s = reduce(s, { type: "SET_GAME_MODE", gameMode: "winLose" }, zero); // ...and back
+    for (const p of s.players) expect(p.lastResult).toBeNull();
+    expect(invariantErrors(s)).toEqual([]);
+  });
+
   it("keeps state valid over a long win/lose session with random winners", () => {
     let s = winLose(13, 2);
     let cursor = 0;
