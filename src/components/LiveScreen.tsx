@@ -2,7 +2,7 @@ import { CourtCard } from "@/components/CourtCard";
 import { Eyebrow, PickerPanel } from "@/components/controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { Action, Player, SessionState, Winner } from "@/engine";
+import type { Action, CourtView, Player, SessionState, Winner } from "@/engine";
 import { courtsView, onHold, playersPerCourt, playingCount, waitingQueue } from "@/engine";
 import { Pause } from "lucide-react";
 import { useState } from "react";
@@ -22,6 +22,36 @@ function splitNames(raw: string): string[] {
 function nameOf(state: SessionState, id: string | null): string | null {
   if (!id) return null;
   return state.players.find((p) => p.id === id)?.name ?? null;
+}
+
+/** Which court (1-based, for display) a player is currently seated on, if any. */
+function courtNumberOf(courts: CourtView[], id: string): number | null {
+  const court = courts.find((c) => c.occupied && [...c.teamA, ...c.teamB].some((p) => p.id === id));
+  return court ? court.index + 1 : null;
+}
+
+/** A stack candidate's status hint: an existing stack takes priority over a
+ * plain status note, since the reassignment consequence matters more than
+ * where they currently are. */
+function candidateHint(state: SessionState, courts: CourtView[], forId: string, candidate: Player) {
+  if (candidate.stackedWith === forId) {
+    return <span className="font-mono text-[11px] text-sage">stacked</span>;
+  }
+  if (candidate.stackedWith) {
+    return (
+      <span className="font-mono text-[11px] text-muted">
+        stacked with {nameOf(state, candidate.stackedWith)}
+      </span>
+    );
+  }
+  if (candidate.status === "playing") {
+    const court = courtNumberOf(courts, candidate.id);
+    return <span className="font-mono text-[11px] text-muted">Court {court}</span>;
+  }
+  if (candidate.status === "hold") {
+    return <span className="font-mono text-[11px] text-muted">on hold</span>;
+  }
+  return undefined;
 }
 
 /** Which player row has a picker/confirm panel open, and which one — at most
@@ -118,7 +148,11 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
             const next = idx < per;
             const stackedName = nameOf(state, p.stackedWith);
             const pickerOpen = activePanel?.kind === "stack" && activePanel.id === p.id;
-            const candidates = queue.filter((q) => q.id !== p.id);
+            // Every other player is a valid stack candidate, regardless of
+            // status — setting a stack with someone playing or on hold has no
+            // effect on anything happening now, it activates automatically
+            // once both are waiting together.
+            const candidates = state.players.filter((q) => q.id !== p.id);
             return (
               <li
                 key={p.id}
@@ -167,17 +201,10 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
                     rows={candidates.map((c) => ({
                       key: c.id,
                       label: c.name,
-                      hint:
-                        c.stackedWith === p.id ? (
-                          <span className="font-mono text-[11px] text-sage">stacked</span>
-                        ) : c.stackedWith ? (
-                          <span className="font-mono text-[11px] text-muted">
-                            stacked with {nameOf(state, c.stackedWith)}
-                          </span>
-                        ) : undefined,
+                      hint: candidateHint(state, courts, p.id, c),
                       onClick: () => setStack(p.id, c.id),
                     }))}
-                    emptyText="No one else waiting."
+                    emptyText="No one else to stack with."
                     onCancel={closePanel}
                   />
                 )}
