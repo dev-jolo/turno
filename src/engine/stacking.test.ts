@@ -40,18 +40,27 @@ function sideOf(state: SessionState, id: string): string[] {
   return c.teamA.includes(id) ? c.teamA : c.teamB;
 }
 
-/** Fail loudly if any seated stacked player's partner ends up on the OTHER team. */
-function assertNoStackSplit(state: SessionState): void {
-  for (const c of state.courts) {
-    if (!c) continue;
-    for (const id of [...c.teamA, ...c.teamB]) {
-      const p = state.players.find((pl) => pl.id === id);
-      if (!p?.stackedWith) continue;
-      const onA = c.teamA.includes(id);
-      const otherTeam = onA ? c.teamB : c.teamA;
-      if (otherTeam.includes(p.stackedWith)) {
-        throw new Error(`stack split: ${id} and ${p.stackedWith} on opposite teams`);
-      }
+/**
+ * Fail loudly if two actively-stacked players (doubles) are EVER both
+ * `"playing"` at once without being seated together on the same team of the
+ * same court. Only fires when BOTH are currently playing — one continuing a
+ * game they were already in while a newly-stacked (or reunifying) partner
+ * waits for it to end is legitimate and expected, not a violation; the
+ * violation is specifically "both on court right now, but not with each
+ * other," whether that's split across teams on one court or split across two
+ * different courts entirely.
+ */
+function assertStackedTogether(state: SessionState): void {
+  if (state.format !== "doubles") return;
+  for (const p of state.players) {
+    if (!p.stackedWith || p.status !== "playing") continue;
+    const partner = state.players.find((pl) => pl.id === p.stackedWith);
+    if (!partner || partner.status !== "playing") continue;
+    const c = state.courts.find((c) => c != null && (c.teamA.includes(p.id) || c.teamB.includes(p.id)));
+    if (!c) throw new Error(`${p.id} marked playing but not seated on any court`);
+    const team = c.teamA.includes(p.id) ? c.teamA : c.teamB;
+    if (!team.includes(partner.id)) {
+      throw new Error(`stack split: ${p.id} and ${partner.id} not on the same team`);
     }
   }
 }
@@ -99,7 +108,7 @@ describe("guaranteed pairing", () => {
     s = reduce(s, { type: "FINISH_COURT", court: courtIdx, winner: "A" }, zero);
     expect(seatedIds(s)).toContain(target);
     expect(seatedIds(s)).toContain(partner);
-    assertNoStackSplit(s);
+    assertStackedTogether(s);
   });
 
   it("a stacked pair is never split across teams, across many rounds", () => {
@@ -112,9 +121,29 @@ describe("guaranteed pairing", () => {
         .map((c) => c.index);
       if (occ.length === 0) break;
       s = reduce(s, { type: "FINISH_COURT", court: occ[i % occ.length], winner: "A" }, zero);
-      assertNoStackSplit(s);
+      assertStackedTogether(s);
     }
     expect(invariantErrors(s)).toEqual([]);
+  });
+
+  it("sits the free half out (never solo) while their partner is still playing on another court", () => {
+    let s = session(10, { courts: 2 }); // 8 playing across 2 courts, 2 waiting (p9, p10)
+    const p1Court = courtIndexOf(s, "p1");
+    s = reduce(s, { type: "SET_STACK", a: "p1", b: "p9" }, zero); // p1 playing, p9 waiting
+    const otherCourt = p1Court === 0 ? 1 : 0;
+    // Free up the OTHER court — p1's partner p9 is fairness-eligible and would
+    // normally be an easy pick, but p1 is still mid-game.
+    s = reduce(s, { type: "FINISH_COURT", court: otherCourt, winner: "A" }, zero);
+    expect(player(s, "p9").status).toBe("waiting");
+    expect(seatedIds(s)).not.toContain("p9");
+    assertStackedTogether(s);
+
+    // Once p1's own court finishes too, they're both waiting and pair up together.
+    s = reduce(s, { type: "FINISH_COURT", court: p1Court, winner: "A" }, zero);
+    expect(seatedIds(s)).toContain("p1");
+    expect(seatedIds(s)).toContain("p9");
+    expect(sideOf(s, "p1")).toContain("p9");
+    assertStackedTogether(s);
   });
 
   it("two stacked pairs can fill one doubles court together", () => {
@@ -126,7 +155,7 @@ describe("guaranteed pairing", () => {
     s = reduce(s, { type: "CLEAR_COURT", court: 0 }, zero);
     expect(sideOf(s, "p5")).toContain("p6");
     expect(sideOf(s, "p7")).toContain("p8");
-    assertNoStackSplit(s);
+    assertStackedTogether(s);
   });
 
   it("skips a stacked pair that doesn't fit the last remaining seat, then picks them up next round", () => {
@@ -171,7 +200,24 @@ describe("guaranteed pairing", () => {
     const s2 = reduce(s1, { type: "FINISH_COURT", court: 0, winner: "A" }, zero);
     expect(seatedIds(s2)).toContain("p4");
     expect(seatedIds(s2)).toContain("p5");
-    assertNoStackSplit(s2);
+    assertStackedTogether(s2);
+  });
+
+  it("skip-and-defer never produces a split pair, across many rounds of a tight-capacity session", () => {
+    // 6 players, 1 court (need=4): only 2 seats free up each round, so the
+    // "does the stacked pair fit the remaining seats this round" tension
+    // recurs on essentially every cycle, not just once.
+    let s = session(6, { courts: 1 });
+    s = reduce(s, { type: "SET_STACK", a: "p4", b: "p5" }, zero);
+    for (let i = 0; i < 40; i++) {
+      const occ = courtsView(s)
+        .filter((c) => c.occupied)
+        .map((c) => c.index);
+      if (occ.length === 0) break;
+      s = reduce(s, { type: "FINISH_COURT", court: occ[0], winner: "A" }, zero);
+      assertStackedTogether(s);
+    }
+    expect(invariantErrors(s)).toEqual([]);
   });
 
   it("a stacked pair's queue position moves together in the waiting order", () => {
@@ -207,6 +253,36 @@ describe("guaranteed pairing", () => {
     const order = waitingQueue(s1).map((p) => p.id);
     expect(order).toEqual(["p2", "p1", "p3"]);
   });
+
+  it("an existing stack link has no effect on the selection algorithm in singles", () => {
+    // Same shape as the doubles queue-linking test above, but in singles: if
+    // the format gate were broken, p1 (games=0) would get boosted to p2's
+    // (games=5) effective position and sort last instead of first.
+    const base = session(1, { format: "singles" });
+    const mk = (id: string, games: number, enteredAt: number, stackedWith: string | null = null): Player => ({
+      id,
+      name: id,
+      games,
+      seed: 0,
+      status: "waiting",
+      enteredAt,
+      lastGameRound: 0,
+      holdAfter: false,
+      stackedWith,
+      partners: {},
+      opps: {},
+      streak: 0,
+    });
+    const s0: SessionState = {
+      ...base,
+      started: true,
+      format: "singles",
+      courtsCount: 1,
+      courts: [null],
+      players: [mk("p1", 0, 1, "p2"), mk("p3", 0, 2), mk("p2", 5, 3, "p1")],
+    };
+    expect(waitingQueue(s0).map((p) => p.id)).toEqual(["p1", "p3", "p2"]);
+  });
 });
 
 describe("format switching", () => {
@@ -218,11 +294,11 @@ describe("format switching", () => {
     expect(player(s, "p1").stackedWith).toBe("p2");
     s = reduce(s, { type: "SET_FORMAT", format: "doubles" }, zero);
     expect(player(s, "p1").stackedWith).toBe("p2");
-    // Force a fresh redraw and confirm they're paired again.
-    s = reduce(s, { type: "CLEAR_COURT", court: 0 }, zero);
-    if (seatedIds(s).includes("p1")) {
-      expect(sideOf(s, "p1")).toContain("p2");
-    }
+    // Switching format already redraws every court (repoolAndRedraw) — confirm
+    // that redraw itself paired them, unconditionally (not "if seated").
+    expect(seatedIds(s)).toContain("p1");
+    expect(sideOf(s, "p1")).toContain("p2");
+    assertStackedTogether(s);
   });
 });
 
@@ -232,7 +308,7 @@ describe("mode switch and Mix All composability", () => {
     s = reduce(s, { type: "SET_STACK", a: "p1", b: "p2" }, zero);
     s = reduce(s, { type: "MIX_ALL" }, zero);
     expect(player(s, "p1").stackedWith).toBe("p2");
-    assertNoStackSplit(s);
+    assertStackedTogether(s);
   });
 
   it("switching game modes doesn't break an existing stack", () => {
@@ -242,12 +318,12 @@ describe("mode switch and Mix All composability", () => {
     expect(player(s, "p1").stackedWith).toBe("p2");
     s = reduce(s, { type: "SET_GAME_MODE", gameMode: "rotating" }, zero);
     expect(player(s, "p1").stackedWith).toBe("p2");
-    assertNoStackSplit(s);
+    assertStackedTogether(s);
   });
 });
 
 describe("substitution independence", () => {
-  it("subbing one half of a stacked pair off court leaves the other half's seat untouched", () => {
+  it("subbing one half of a stacked pair off court leaves the other half's seat and link untouched", () => {
     let s = session(6);
     const outId = seatedIds(s)[0];
     const partnerId = seatedIds(s)[1]; // same court
@@ -258,13 +334,26 @@ describe("substitution independence", () => {
     const after = player(s, partnerId);
     expect(after.status).toBe(before.status);
     expect(seatedIds(s)).toContain(partnerId);
+    // The link isn't silently rewired to the incoming substitute — it still
+    // points at the (now benched) original partner.
+    expect(after.stackedWith).toBe(outId);
   });
 
-  it("the incoming substitute isn't linked as newly stacked", () => {
-    let s = session(6);
-    const outId = seatedIds(s)[0];
+  it("the incoming substitute isn't linked as newly stacked with anyone", () => {
+    // A roster with an UNRELATED stacked pair already present, so this isn't
+    // just proving the field is null by construction — it proves substitution
+    // doesn't touch stacking at all, even when stacking is active elsewhere.
+    let s = session(10, { courts: 2 }); // 8 playing, 2 waiting
+    s = reduce(s, { type: "SET_STACK", a: "p1", b: "p2" }, zero); // unrelated pair
+    const outId = seatedIds(s).find((id) => id !== "p1" && id !== "p2");
+    if (!outId) throw new Error("expected a non-stacked seated player");
     const incomingId = waitingQueue(s)[0].id;
     s = reduce(s, { type: "SUBSTITUTE_PLAYER", court: courtIndexOf(s, outId), outId }, zero);
     expect(player(s, incomingId).stackedWith).toBeNull();
+    // No other player was rewired to reference the substitute either.
+    expect(s.players.some((p) => p.stackedWith === incomingId)).toBe(false);
+    // The unrelated pair is untouched by any of this.
+    expect(player(s, "p1").stackedWith).toBe("p2");
+    expect(player(s, "p2").stackedWith).toBe("p1");
   });
 });

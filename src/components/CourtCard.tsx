@@ -1,3 +1,4 @@
+import { PickerPanel } from "@/components/controls";
 import { Button } from "@/components/ui/button";
 import type { CourtView } from "@/engine";
 import type { Format, GameMode, Player, Winner } from "@/engine";
@@ -47,49 +48,19 @@ function SubstituteMenu({
   onPick: (inId: string) => void;
   onCancel: () => void;
 }) {
-  return (
-    <div className="mt-1 flex flex-col gap-1 rounded-lg border border-white/10 bg-surface-2 p-1.5 text-left text-[13px] font-normal normal-case tracking-normal">
-      {mode === "menu" ? (
-        <>
-          <button
-            type="button"
-            onClick={onAutoSub}
-            className="rounded-md px-2 py-1.5 text-left hover:bg-white/10"
-          >
-            Auto-sub next fairest
-          </button>
-          <button
-            type="button"
-            onClick={onOpenPicker}
-            className="rounded-md px-2 py-1.5 text-left hover:bg-white/10"
-          >
-            Pick someone…
-          </button>
-        </>
-      ) : waitingPlayers.length > 0 ? (
-        waitingPlayers.map((w) => (
-          <button
-            key={w.id}
-            type="button"
-            onClick={() => onPick(w.id)}
-            className="flex items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-white/10"
-          >
-            <span className="truncate">{w.name}</span>
-            <span className="font-mono text-[11px] text-muted">{w.games}g</span>
-          </button>
-        ))
-      ) : (
-        <p className="px-2 py-1.5 text-muted">No one waiting.</p>
-      )}
-      <button
-        type="button"
-        onClick={onCancel}
-        className="rounded-md px-2 py-1.5 text-left text-muted hover:bg-white/10"
-      >
-        Cancel
-      </button>
-    </div>
-  );
+  const rows =
+    mode === "menu"
+      ? [
+          { key: "auto", label: "Auto-sub next fairest", onClick: onAutoSub },
+          { key: "pick", label: "Pick someone…", onClick: onOpenPicker },
+        ]
+      : waitingPlayers.map((w) => ({
+          key: w.id,
+          label: w.name,
+          hint: <span className="font-mono text-[11px] text-muted">{w.games}g</span>,
+          onClick: () => onPick(w.id),
+        }));
+  return <PickerPanel rows={rows} emptyText="No one waiting." onCancel={onCancel} />;
 }
 
 function PlayerLine({

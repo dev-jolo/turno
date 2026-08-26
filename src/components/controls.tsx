@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Minus, Plus } from "lucide-react";
+import type { ReactNode } from "react";
 
 /** A small numeric stepper (used for courts). */
 export function Stepper({
@@ -90,6 +91,56 @@ export function Eyebrow({ title, tag }: { title: string; tag?: string }) {
       <h2 className="text-[13px] font-extrabold uppercase tracking-[0.16em]">{title}</h2>
       <span className="h-px flex-1 bg-white/10" />
       {tag != null && <span className="font-mono text-xs text-muted">{tag}</span>}
+    </div>
+  );
+}
+
+export interface PickerRow {
+  key: string;
+  label: ReactNode;
+  hint?: ReactNode;
+  onClick: () => void;
+}
+
+/**
+ * A small inline dropdown panel of clickable rows plus a trailing Cancel row
+ * — the "pick a player" pattern used by the court substitution and player
+ * stacking controls. `emptyText` renders in place of the rows when `rows` is
+ * empty (e.g. nobody eligible to pick).
+ */
+export function PickerPanel({
+  rows,
+  emptyText,
+  onCancel,
+}: {
+  rows: PickerRow[];
+  emptyText?: string;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="mt-1 flex flex-col gap-1 rounded-lg border border-white/10 bg-surface-2 p-1.5 text-left text-[13px] font-normal normal-case tracking-normal">
+      {rows.length > 0 ? (
+        rows.map((row) => (
+          <button
+            key={row.key}
+            type="button"
+            onClick={row.onClick}
+            className="flex items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-white/10"
+          >
+            <span className="truncate">{row.label}</span>
+            {row.hint}
+          </button>
+        ))
+      ) : (
+        <p className="px-2 py-1.5 text-muted">{emptyText ?? "Nothing to pick."}</p>
+      )}
+      <button
+        type="button"
+        onClick={onCancel}
+        className="rounded-md px-2 py-1.5 text-left text-muted hover:bg-white/10"
+      >
+        Cancel
+      </button>
     </div>
   );
 }

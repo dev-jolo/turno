@@ -1,5 +1,5 @@
 import { CourtCard } from "@/components/CourtCard";
-import { Eyebrow } from "@/components/controls";
+import { Eyebrow, PickerPanel } from "@/components/controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Action, SessionState, Winner } from "@/engine";
@@ -127,36 +127,23 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
                   </Button>
                 </div>
                 {pickerOpen && (
-                  <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-surface-2 p-1.5 text-[13px]">
-                    {candidates.length > 0 ? (
-                      candidates.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => setStack(p.id, c.id)}
-                          className="flex items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-white/10"
-                        >
-                          <span className="truncate">{c.name}</span>
-                          {c.stackedWith === p.id ? (
-                            <span className="font-mono text-[11px] text-sage">stacked</span>
-                          ) : c.stackedWith ? (
-                            <span className="font-mono text-[11px] text-muted">
-                              stacked with {nameOf(state, c.stackedWith)}
-                            </span>
-                          ) : null}
-                        </button>
-                      ))
-                    ) : (
-                      <p className="px-2 py-1.5 text-muted">No one else waiting.</p>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setStackPickerFor(null)}
-                      className="rounded-md px-2 py-1.5 text-left text-muted hover:bg-white/10"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                  <PickerPanel
+                    rows={candidates.map((c) => ({
+                      key: c.id,
+                      label: c.name,
+                      hint:
+                        c.stackedWith === p.id ? (
+                          <span className="font-mono text-[11px] text-sage">stacked</span>
+                        ) : c.stackedWith ? (
+                          <span className="font-mono text-[11px] text-muted">
+                            stacked with {nameOf(state, c.stackedWith)}
+                          </span>
+                        ) : undefined,
+                      onClick: () => setStack(p.id, c.id),
+                    }))}
+                    emptyText="No one else waiting."
+                    onCancel={() => setStackPickerFor(null)}
+                  />
                 )}
               </li>
             );

@@ -55,6 +55,19 @@ export function activeStackPartner(s: SessionState, p: Player): Player | undefin
 }
 
 /**
+ * True if a waiting player's stack partner is currently seated on a court
+ * (some OTHER court, since this player is waiting). Such a player must sit
+ * out selection entirely rather than fall back to being picked solo — solo
+ * selection here would seat them apart from a partner who's mid-game, which
+ * is exactly the split the guarantee exists to prevent. They rejoin as a pair
+ * once the partner's court finishes and both are waiting together again.
+ */
+function stackPartnerPlaying(s: SessionState, p: Player): boolean {
+  if (s.format !== "doubles" || !p.stackedWith) return false;
+  return byId(s, p.stackedWith)?.status === "playing";
+}
+
+/**
  * Sort key for the fairness queue: a stacked pair (both currently waiting)
  * shares the less-caught-up member's position, so neither can leapfrog nor
  * bury the other. Everyone else's own `queueGames` is unchanged.
@@ -82,7 +95,7 @@ export function isPlaying(s: SessionState, id: string): boolean {
 }
 
 /** One or two waiting players who must be selected together, never split. */
-export interface Unit {
+interface Unit {
   ids: string[];
 }
 
@@ -93,7 +106,7 @@ export interface Unit {
  * unit appears at the position of its first not-yet-consumed member, so the
  * result stays fairness-sorted.
  */
-export function waitingUnits(s: SessionState, w: Player[]): Unit[] {
+function waitingUnits(s: SessionState, w: Player[]): Unit[] {
   const units: Unit[] = [];
   const consumed = new Set<string>();
   for (const p of w) {
@@ -102,9 +115,11 @@ export function waitingUnits(s: SessionState, w: Player[]): Unit[] {
     if (partner && !consumed.has(partner.id)) {
       units.push({ ids: [p.id, partner.id] });
       consumed.add(partner.id);
-    } else {
+    } else if (!stackPartnerPlaying(s, p)) {
       units.push({ ids: [p.id] });
     }
+    // else: partner is mid-game on another court — sit this player out of
+    // selection until both are waiting together again (see stackPartnerPlaying).
     consumed.add(p.id);
   }
   return units;
@@ -163,6 +178,19 @@ function pickBaseUnits(units: Unit[], need: number): Unit[] {
   return chosen;
 }
 
+/** Take fairness-ordered `units` up to (but not exceeding) `maxPlayers` total,
+ * for bounding the optional-mixing search window. */
+function unitWindow(units: Unit[], maxPlayers: number): Unit[] {
+  const window: Unit[] = [];
+  let players = 0;
+  for (const u of units) {
+    if (players >= maxPlayers) break;
+    window.push(u);
+    players += u.ids.length;
+  }
+  return window;
+}
+
 /**
  * Cost of a proposed match: heavily penalize repeat partners, lightly penalize
  * repeat opponents. Lower is better.
@@ -219,9 +247,12 @@ const DOUBLES_SPLITS: ReadonlyArray<readonly [number[], number[]]> = [
 /**
  * Choose the team split (of a fixed group) that reuses partners/opponents
  * least, never separating a stacked pair (a hard constraint, not an added
- * cost — callers only ever pass whole units in, so at most one pair can be
- * present, and exactly one of the 3 splits keeps any given pair together).
- * Ties among the remaining valid splits are broken randomly via `rng`.
+ * cost). This applies to ANY caller, not just `selectGroup`'s unit-respecting
+ * input — e.g. king mode's winner/challenger re-split (`modes.ts`) calls this
+ * directly and gets the same guarantee automatically. For 4 ids containing 0,
+ * 1, or 2 disjoint stacked pairs, at least one of the 3 splits always
+ * satisfies every pair present (with 1 or 2 pairs, exactly one does). Ties
+ * among the remaining valid splits are broken randomly via `rng`.
  */
 export function bestSplit(s: SessionState, ids: string[], rng: Rng): Split {
   if (teamSize(s) === 1) {
@@ -298,13 +329,7 @@ export function selectGroup(s: SessionState, rng: Rng): Split | null {
       ? units.filter((u) => notInBase(u) && unitRested(s, u))
       : units.filter(notInBase);
 
-  const windowUnits: Unit[] = [];
-  let windowPlayers = 0;
-  for (const u of [...base, ...extraUnits]) {
-    if (windowPlayers >= need + SELECTION_WINDOW_SLACK) break;
-    windowUnits.push(u);
-    windowPlayers += u.ids.length;
-  }
+  const windowUnits = unitWindow([...base, ...extraUnits], need + SELECTION_WINDOW_SLACK);
 
   let best = bestSplit(s, baseIds, rng);
   for (const comboUnits of unitCombinations(windowUnits, need)) {
