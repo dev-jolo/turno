@@ -133,6 +133,27 @@ describe("removal cleanup", () => {
     expect(player(s, "p3").stackedWith).toBe("p4");
     expect(player(s, "p4").stackedWith).toBe("p3");
   });
+
+  it("removing a PLAYING stacked player clears the partner's link without corrupting the court", () => {
+    let s = session(6); // 4 playing, 2 waiting
+    const outId = seatedIds(s)[0];
+    const partnerId = seatedIds(s)[1]; // same court
+    s = reduce(s, { type: "SET_STACK", a: outId, b: partnerId }, zero);
+    const courtIdx = courtIndexOf(s, outId);
+    s = reduce(s, { type: "REMOVE_PLAYER", id: outId }, zero);
+
+    expect(s.players.some((p) => p.id === outId)).toBe(false);
+    expect(player(s, partnerId).stackedWith).toBeNull();
+    // REMOVE_PLAYER doesn't redraw (pre-existing, unrelated to stacking) — the
+    // court is left one seat short rather than auto-backfilled. The partner's
+    // link cleanup is what this ticket is actually responsible for; confirm
+    // it didn't also corrupt the court/roster state around it.
+    const court = s.courts[courtIdx];
+    expect(court?.teamA.includes(outId)).toBe(false);
+    expect(court?.teamB.includes(outId)).toBe(false);
+    expect([...(court?.teamA ?? []), ...(court?.teamB ?? [])]).toContain(partnerId);
+    expect(invariantErrors(s)).toEqual([]);
+  });
 });
 
 describe("guaranteed pairing", () => {

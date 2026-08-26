@@ -322,6 +322,9 @@ export function reduce(state: SessionState, action: Action, rng: Rng = Math.rand
       break;
     case "UNSTACK":
       clearStack(s, action.id);
+      // Same as SET_STACK: unstacking can free a court that was stuck empty
+      // because the fairest waiting unit was a pair that didn't fit — a no-op
+      // otherwise, since assignEmptyCourts only ever fills already-null slots.
       if (s.started) assignEmptyCourts(s, rng);
       break;
     default: {
