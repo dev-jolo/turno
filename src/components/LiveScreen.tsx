@@ -48,11 +48,11 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
             format={state.format}
             gameMode={state.gameMode}
             perCourt={per}
-            waitingCount={queue.length}
+            waitingPlayers={queue}
             onFinish={(winner) => finish(court.index, winner)}
             onClear={() => dispatch({ type: "CLEAR_COURT", court: court.index })}
-            onSubstitute={(outId) =>
-              dispatch({ type: "SUBSTITUTE_PLAYER", court: court.index, outId })
+            onSubstitute={(outId, inId) =>
+              dispatch({ type: "SUBSTITUTE_PLAYER", court: court.index, outId, inId })
             }
           />
         ))}

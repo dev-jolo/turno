@@ -140,3 +140,67 @@ describe("substitute (automatic)", () => {
     expect(invariantErrors(s2)).toEqual([]);
   });
 });
+
+describe("substitute (manual)", () => {
+  it("fills the vacated seat with the specified waiting player", () => {
+    const s0 = session(6); // 4 playing, 2 waiting
+    const outId = seatedIds(s0)[0];
+    const chosen = waitingQueue(s0)[1].id; // not the fairest pick — a deliberate choice
+    const s1 = reduce(
+      s0,
+      { type: "SUBSTITUTE_PLAYER", court: courtIndexOf(s0, outId), outId, inId: chosen },
+      zero,
+    );
+    expect(seatedIds(s1)).toContain(chosen);
+    expect(seatedIds(s1)).not.toContain(outId);
+    const in1 = s1.players.find((p) => p.id === chosen);
+    expect(in1?.status).toBe("playing");
+    const out1 = s1.players.find((p) => p.id === outId);
+    expect(out1?.status).toBe("hold");
+    expect(invariantErrors(s1)).toEqual([]);
+  });
+
+  it("no-ops when the chosen target is on hold, not waiting", () => {
+    const s0 = session(6);
+    const outId = seatedIds(s0)[0];
+    const heldId = waitingQueue(s0)[0].id;
+    const s0Held = reduce(s0, { type: "HOLD_PLAYER", id: heldId }, zero);
+    const s1 = reduce(
+      s0Held,
+      { type: "SUBSTITUTE_PLAYER", court: courtIndexOf(s0Held, outId), outId, inId: heldId },
+      zero,
+    );
+    expect(s1).toEqual(s0Held);
+  });
+
+  it("no-ops when the chosen target is already playing on another court", () => {
+    const s0 = session(10, { courts: 2 }); // 8 playing across 2 courts, 2 waiting
+    const outId = seatedIds(s0)[0];
+    const courtIdx = courtIndexOf(s0, outId);
+    const otherPlaying = seatedIds(s0).find(
+      (id) => id !== outId && courtIndexOf(s0, id) !== courtIdx,
+    );
+    if (!otherPlaying) throw new Error("expected a player on another court");
+    const s1 = reduce(
+      s0,
+      { type: "SUBSTITUTE_PLAYER", court: courtIdx, outId, inId: otherPlaying },
+      zero,
+    );
+    expect(s1).toEqual(s0);
+  });
+
+  it("leaves the manually-chosen substitute's fairness stats untouched", () => {
+    const s0 = session(6);
+    const outId = seatedIds(s0)[0];
+    const chosen = waitingQueue(s0)[1];
+    const s1 = reduce(
+      s0,
+      { type: "SUBSTITUTE_PLAYER", court: courtIndexOf(s0, outId), outId, inId: chosen.id },
+      zero,
+    );
+    const after = s1.players.find((p) => p.id === chosen.id);
+    if (!after) throw new Error("player vanished");
+    expect(after.games).toBe(chosen.games);
+    expect(after.seed).toBe(chosen.seed);
+  });
+});
