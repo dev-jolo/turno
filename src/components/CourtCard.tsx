@@ -19,6 +19,19 @@ interface CourtCardProps {
 /** Which player's substitute control is expanded, and how far. */
 type SubMenuState = { outId: string; mode: "menu" | "pick" } | null;
 
+/** Everything a player row needs to drive the substitute control — bundled so
+ * it threads through TeamSide -> PlayerLine as one prop instead of several. */
+interface SubControls {
+  menu: SubMenuState;
+  canSubstitute: boolean;
+  waitingPlayers: Player[];
+  onToggle: (outId: string) => void;
+  onAutoSub: (outId: string) => void;
+  onOpenPicker: (outId: string) => void;
+  onPick: (outId: string, inId: string) => void;
+  onCancel: () => void;
+}
+
 function SubstituteMenu({
   mode,
   waitingPlayers,
@@ -82,28 +95,14 @@ function SubstituteMenu({
 function PlayerLine({
   player,
   alignRight,
-  canSubstitute,
-  menu,
-  waitingPlayers,
-  onToggle,
-  onAutoSub,
-  onOpenPicker,
-  onPick,
-  onCancel,
+  controls,
 }: {
   player: Player;
   alignRight?: boolean;
-  canSubstitute: boolean;
-  menu: SubMenuState;
-  waitingPlayers: Player[];
-  onToggle: () => void;
-  onAutoSub: () => void;
-  onOpenPicker: () => void;
-  onPick: (inId: string) => void;
-  onCancel: () => void;
+  controls: SubControls;
 }) {
   const games = <span className="font-mono text-[11px] text-muted">{player.games}g</span>;
-  const isOpen = menu?.outId === player.id;
+  const isOpen = controls.menu?.outId === player.id;
   return (
     <div className={cn("flex flex-col", alignRight && "items-end")}>
       <div
@@ -116,10 +115,10 @@ function PlayerLine({
         {games}
         <button
           type="button"
-          onClick={onToggle}
-          disabled={!canSubstitute}
+          onClick={() => controls.onToggle(player.id)}
+          disabled={!controls.canSubstitute}
           title={
-            canSubstitute
+            controls.canSubstitute
               ? `Sub out ${player.name}`
               : "No one waiting to sub in — use Clear instead"
           }
@@ -128,14 +127,14 @@ function PlayerLine({
           <Repeat className="size-3.5" />
         </button>
       </div>
-      {isOpen && menu && (
+      {isOpen && controls.menu && (
         <SubstituteMenu
-          mode={menu.mode}
-          waitingPlayers={waitingPlayers}
-          onAutoSub={onAutoSub}
-          onOpenPicker={onOpenPicker}
-          onPick={onPick}
-          onCancel={onCancel}
+          mode={controls.menu.mode}
+          waitingPlayers={controls.waitingPlayers}
+          onAutoSub={() => controls.onAutoSub(player.id)}
+          onOpenPicker={() => controls.onOpenPicker(player.id)}
+          onPick={(inId) => controls.onPick(player.id, inId)}
+          onCancel={controls.onCancel}
         />
       )}
     </div>
@@ -146,26 +145,12 @@ function TeamSide({
   label,
   players,
   alignRight,
-  canSubstitute,
-  waitingPlayers,
-  menu,
-  onToggle,
-  onAutoSub,
-  onOpenPicker,
-  onPick,
-  onCancel,
+  controls,
 }: {
   label: string;
   players: Player[];
   alignRight?: boolean;
-  canSubstitute: boolean;
-  waitingPlayers: Player[];
-  menu: SubMenuState;
-  onToggle: (playerId: string) => void;
-  onAutoSub: (playerId: string) => void;
-  onOpenPicker: (playerId: string) => void;
-  onPick: (outId: string, inId: string) => void;
-  onCancel: () => void;
+  controls: SubControls;
 }) {
   return (
     <div
@@ -176,19 +161,7 @@ function TeamSide({
     >
       <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">{label}</span>
       {players.map((p) => (
-        <PlayerLine
-          key={p.id}
-          player={p}
-          alignRight={alignRight}
-          canSubstitute={canSubstitute}
-          menu={menu}
-          waitingPlayers={waitingPlayers}
-          onToggle={() => onToggle(p.id)}
-          onAutoSub={() => onAutoSub(p.id)}
-          onOpenPicker={() => onOpenPicker(p.id)}
-          onPick={(inId) => onPick(p.id, inId)}
-          onCancel={onCancel}
-        />
+        <PlayerLine key={p.id} player={p} alignRight={alignRight} controls={controls} />
       ))}
     </div>
   );
@@ -209,18 +182,23 @@ export function CourtCard({
   const canSubstitute = waitingPlayers.length > 0;
   const sideLabel = isSingles ? ["Player", "Player"] : ["Team A", "Team B"];
 
-  const toggle = (playerId: string) =>
-    setMenu((cur) => (cur?.outId === playerId ? null : { outId: playerId, mode: "menu" }));
-  const autoSub = (playerId: string) => {
-    onSubstitute(playerId);
-    setMenu(null);
+  const controls: SubControls = {
+    menu,
+    canSubstitute,
+    waitingPlayers,
+    onToggle: (outId) =>
+      setMenu((cur) => (cur?.outId === outId ? null : { outId, mode: "menu" })),
+    onAutoSub: (outId) => {
+      onSubstitute(outId);
+      setMenu(null);
+    },
+    onOpenPicker: (outId) => setMenu({ outId, mode: "pick" }),
+    onPick: (outId, inId) => {
+      onSubstitute(outId, inId);
+      setMenu(null);
+    },
+    onCancel: () => setMenu(null),
   };
-  const openPicker = (playerId: string) => setMenu({ outId: playerId, mode: "pick" });
-  const pick = (outId: string, inId: string) => {
-    onSubstitute(outId, inId);
-    setMenu(null);
-  };
-  const cancel = () => setMenu(null);
 
   if (!court.occupied) {
     const filling = waitingPlayers.length >= perCourt;
@@ -266,31 +244,8 @@ export function CourtCard({
       </div>
 
       <div className="court-net relative grid min-h-[118px] grid-cols-2 bg-surface-2">
-        <TeamSide
-          label={sideLabel[0]}
-          players={court.teamA}
-          canSubstitute={canSubstitute}
-          waitingPlayers={waitingPlayers}
-          menu={menu}
-          onToggle={toggle}
-          onAutoSub={autoSub}
-          onOpenPicker={openPicker}
-          onPick={pick}
-          onCancel={cancel}
-        />
-        <TeamSide
-          label={sideLabel[1]}
-          players={court.teamB}
-          alignRight
-          canSubstitute={canSubstitute}
-          waitingPlayers={waitingPlayers}
-          menu={menu}
-          onToggle={toggle}
-          onAutoSub={autoSub}
-          onOpenPicker={openPicker}
-          onPick={pick}
-          onCancel={cancel}
-        />
+        <TeamSide label={sideLabel[0]} players={court.teamA} controls={controls} />
+        <TeamSide label={sideLabel[1]} players={court.teamB} alignRight controls={controls} />
       </div>
 
       {!canSubstitute && (

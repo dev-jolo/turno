@@ -22,6 +22,21 @@ function session(
   );
 }
 
+/** Play `n` games, round-robin finishing whichever courts are occupied. */
+function playGames(start: SessionState, n: number): SessionState {
+  let state = start;
+  let cursor = 0;
+  for (let i = 0; i < n; i++) {
+    const occ = courtsView(state)
+      .filter((c) => c.occupied)
+      .map((c) => c.index);
+    if (occ.length === 0) break;
+    const court = occ[cursor++ % occ.length];
+    state = reduce(state, { type: "FINISH_COURT", court, winner: "A" }, zero);
+  }
+  return state;
+}
+
 function courtIndexOf(state: SessionState, id: string): number {
   return courtsView(state).findIndex(
     (c) => c.occupied && [...c.teamA, ...c.teamB].some((p) => p.id === id),
@@ -71,9 +86,10 @@ describe("substitute (automatic)", () => {
   });
 
   it("leaves the substitute's fairness stats untouched until the game finishes", () => {
-    const s0 = session(6);
+    const s0 = playGames(session(6), 6); // give games/history a chance to become nonzero
     const outId = seatedIds(s0)[0];
     const incoming = waitingQueue(s0)[0];
+    expect(incoming.games).toBeGreaterThan(0); // otherwise this test can't catch a reset-to-0 bug
     const s1 = reduce(s0, { type: "SUBSTITUTE_PLAYER", court: courtIndexOf(s0, outId), outId }, zero);
     const after = s1.players.find((p) => p.id === incoming.id);
     if (!after) throw new Error("player vanished");
@@ -190,9 +206,10 @@ describe("substitute (manual)", () => {
   });
 
   it("leaves the manually-chosen substitute's fairness stats untouched", () => {
-    const s0 = session(6);
+    const s0 = playGames(session(6), 6); // give games/history a chance to become nonzero
     const outId = seatedIds(s0)[0];
     const chosen = waitingQueue(s0)[1];
+    expect(chosen.games).toBeGreaterThan(0); // otherwise this test can't catch a reset-to-0 bug
     const s1 = reduce(
       s0,
       { type: "SUBSTITUTE_PLAYER", court: courtIndexOf(s0, outId), outId, inId: chosen.id },
