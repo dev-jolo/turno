@@ -55,6 +55,7 @@ function newPlayer(s: SessionState, name: string): Player {
     lastGameRound: 0,
     holdAfter: false,
     stackedWith: null,
+    lastResult: null,
     partners: {},
     opps: {},
     streak: 0,

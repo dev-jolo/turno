@@ -65,7 +65,9 @@ export function SettingsSheet({ open, onOpenChange, state, dispatch }: SettingsS
             hint={
               state.gameMode === "king"
                 ? "Winners stay, losers rotate off"
-                : "Courts rotate independently"
+                : state.gameMode === "winLose"
+                  ? "Every match pairs a winner with a loser"
+                  : "Courts rotate independently"
             }
             divider
           >
@@ -76,6 +78,7 @@ export function SettingsSheet({ open, onOpenChange, state, dispatch }: SettingsS
               options={[
                 { value: "rotating", label: "Rotating" },
                 { value: "king", label: "King" },
+                { value: "winLose", label: "Win/Lose" },
               ]}
             />
           </Row>

@@ -167,6 +167,12 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[15.5px] font-[650]">{p.name}</div>
                     <div className="font-mono text-[11px] text-muted">
+                      {state.gameMode === "winLose" &&
+                        (p.lastResult === "win"
+                          ? "Won last · "
+                          : p.lastResult === "lose"
+                            ? "Lost last · "
+                            : "")}
                       {p.games} game{p.games === 1 ? "" : "s"} played
                       {stackedName && ` · stacked with ${stackedName}`}
                     </div>

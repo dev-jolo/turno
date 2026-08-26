@@ -283,6 +283,43 @@ export function bestSplit(s: SessionState, ids: string[], rng: Rng): Split {
 }
 
 /**
+ * Choose a team split for Win/Lose mode: prefer a split where no team pairs
+ * two players who share the same most-recent result (winner+winner or
+ * loser+loser) together — the whole point of this mode is a winner paired
+ * with a loser on each side. Among splits that achieve that, ties are broken
+ * by the same repeat-partner/opponent cost minimization `bestSplit` uses.
+ * Falls back to plain cost minimization (no result constraint) when no mixed
+ * split exists — e.g. more than 2 of one result had to be pulled in to fill
+ * the court — rather than failing. In singles there's no pairing at all, the
+ * two players directly oppose each other.
+ */
+export function bestWinLoseSplit(s: SessionState, ids: string[], rng: Rng): Split {
+  if (teamSize(s) === 1) {
+    return { teamA: [ids[0]], teamB: [ids[1]], cost: pairCost(s, [ids[0]], [ids[1]]) };
+  }
+  const resultOf = (id: string): Player["lastResult"] => byId(s, id)?.lastResult ?? null;
+  const sameResult = (t: string[]): boolean =>
+    t.length === 2 && resultOf(t[0]) != null && resultOf(t[0]) === resultOf(t[1]);
+
+  let best: Split | null = null;
+  let bestMixed: Split | null = null;
+  for (const [a, b] of DOUBLES_SPLITS) {
+    const teamA = [ids[a[0]], ids[a[1]]];
+    const teamB = [ids[b[0]], ids[b[1]]];
+    const cost = pairCost(s, teamA, teamB);
+    if (best == null || cost < best.cost || (cost === best.cost && rng() < 0.5)) {
+      best = { teamA, teamB, cost };
+    }
+    if (!sameResult(teamA) && !sameResult(teamB)) {
+      if (bestMixed == null || cost < bestMixed.cost || (cost === bestMixed.cost && rng() < 0.5)) {
+        bestMixed = { teamA, teamB, cost };
+      }
+    }
+  }
+  return bestMixed ?? (best as Split);
+}
+
+/**
  * Pick the next group for ONE court: strict fairness first, then same-fairness
  * swaps to improve partner/opponent mixing. Returns `null` if not enough
  * waiting players. Never selects a group whose total queue position exceeds the

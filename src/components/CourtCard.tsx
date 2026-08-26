@@ -226,7 +226,7 @@ export function CourtCard({
       )}
 
       <div className="flex gap-2 border-t border-white/10 p-3">
-        {gameMode === "king" ? (
+        {gameMode === "king" || gameMode === "winLose" ? (
           <>
             <Button
               variant="primary"

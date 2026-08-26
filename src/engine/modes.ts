@@ -12,13 +12,17 @@ import {
 import {
   assignEmptyCourts,
   bestSplit,
+  bestWinLoseSplit,
   byId,
+  playersPerCourt,
   recordHistory,
   releaseFromCourt,
+  seatGroup,
   teamSize,
   waitingSorted,
 } from "./helpers";
-import type { Court, GameMode, Rng, SessionState, Winner } from "./types";
+import type { Split } from "./helpers";
+import type { Court, GameMode, Player, Rng, SessionState, Winner } from "./types";
 
 export interface GameModeStrategy {
   /** Whether finishing a game in this mode requires recording who won. */
@@ -153,7 +157,106 @@ const king: GameModeStrategy = {
   },
 };
 
-const STRATEGIES: Record<GameMode, GameModeStrategy> = { rotating, king };
+/**
+ * Waiting players belonging to one Win/Lose queue, FIFO — longest-waiting
+ * first. Not fairness-weighted (no `games`/`seed`): a player's position here
+ * is purely "how long since the result that put them in this queue."
+ */
+function winLoseQueueSorted(s: SessionState, result: Player["lastResult"]): Player[] {
+  return s.players
+    .filter((p) => p.status === "waiting" && p.lastResult === result)
+    .sort((a, b) => a.enteredAt - b.enteredAt);
+}
+
+/**
+ * Assemble the next Win/Lose match for one court: two players from the
+ * Winners queue, two from the Losers queue. If either queue can't supply its
+ * half, the shortfall is backfilled from whichever remaining players — the
+ * other queue's overflow, or anyone with no result yet — have waited longest,
+ * rather than preferring one source over another. Returns null if there
+ * still aren't enough waiting players to fill the court (same convention as
+ * rotating mode's `selectGroup`).
+ */
+function selectWinLoseGroup(s: SessionState, rng: Rng): Split | null {
+  const need = playersPerCourt(s);
+  const half = need / 2;
+
+  const winners = winLoseQueueSorted(s, "win");
+  const losers = winLoseQueueSorted(s, "lose");
+  const neutral = winLoseQueueSorted(s, null);
+
+  const chosen = [...winners.slice(0, half), ...losers.slice(0, half)];
+
+  if (chosen.length < need) {
+    const used = new Set(chosen.map((p) => p.id));
+    const remainder = [...winners.slice(half), ...losers.slice(half), ...neutral]
+      .filter((p) => !used.has(p.id))
+      .sort((a, b) => a.enteredAt - b.enteredAt);
+    chosen.push(...remainder.slice(0, need - chosen.length));
+  }
+
+  if (chosen.length < need) return null;
+  return bestWinLoseSplit(
+    s,
+    chosen.map((p) => p.id),
+    rng,
+  );
+}
+
+/** Fill every open court with the next Win/Lose match. */
+function assignEmptyCourtsWinLose(s: SessionState, rng: Rng): void {
+  for (let i = 0; i < s.courtsCount; i++) {
+    if (s.courts[i]) continue;
+    const grp = selectWinLoseGroup(s, rng);
+    if (!grp) break; // not enough players for another court
+    seatGroup(s, i, grp);
+  }
+}
+
+/**
+ * Win/Lose stacking: nobody stays on court. A finished game sends its winners
+ * to the back of the Winners queue and its losers to the back of the Losers
+ * queue; the just-freed court (and any other currently-open court) is
+ * reassembled from both queues, mixing a winner with a loser on every team —
+ * see `selectWinLoseGroup`. Stacked pairs are handled by the same hard
+ * constraint `bestWinLoseSplit` already applies, same as every other mode.
+ */
+const winLose: GameModeStrategy = {
+  needsWinner: true,
+  onGameEnd(s, i, winner, rng) {
+    const court = s.courts[i];
+    if (!court) return;
+    tallyGame(s, court);
+
+    if (winner !== "A" && winner !== "B") {
+      // Shouldn't happen via the UI — fall back to a plain release so state
+      // never corrupts, the same fallback the king strategy uses.
+      for (const id of [...court.teamA, ...court.teamB]) releaseFromCourt(s, id);
+      s.courts[i] = null;
+      assignEmptyCourtsWinLose(s, rng);
+      s.round += 1;
+      return;
+    }
+
+    const winners = winner === "A" ? court.teamA : court.teamB;
+    const losers = winner === "A" ? court.teamB : court.teamA;
+    for (const id of winners) {
+      const p = byId(s, id);
+      if (p) p.lastResult = "win";
+      releaseFromCourt(s, id);
+    }
+    for (const id of losers) {
+      const p = byId(s, id);
+      if (p) p.lastResult = "lose";
+      releaseFromCourt(s, id);
+    }
+    s.courts[i] = null;
+    assignEmptyCourtsWinLose(s, rng);
+    s.round += 1;
+  },
+};
+
+const STRATEGIES: Record<GameMode, GameModeStrategy> = { rotating, king, winLose };
 
 export function strategyFor(mode: GameMode): GameModeStrategy {
   return STRATEGIES[mode];

@@ -15,8 +15,13 @@ export type Format = "doubles" | "singles";
  *   to the back of the queue and the next fair group is pulled on. The DEFAULT.
  * - `king`: winners stay (capped), losers rotate off, challengers come up. This
  *   mode records who won each game.
+ * - `winLose`: nobody stays — a finished game sends its winners to the back of
+ *   a Winners queue and its losers to the back of a Losers queue, and the next
+ *   match pulls two from each, pairing a winner with a loser on every team.
+ *   Named apart from "stack"/"stacked" (the pinned-partner feature) on purpose
+ *   — the two concepts are unrelated and the names must not be confusable.
  */
-export type GameMode = "rotating" | "king";
+export type GameMode = "rotating" | "king" | "winLose";
 
 /** Which side won a king-of-the-court game. */
 export type Winner = "A" | "B";
@@ -60,6 +65,14 @@ export interface Player {
    * whether the link is currently "active" (see `helpers.ts`), not this field.
    */
   stackedWith: string | null;
+  /**
+   * Win/Lose mode only: this player's most recent match result, or null if
+   * they haven't played one yet (in this mode) — which queue they currently
+   * belong to is derived from this, not stored separately. Never written by
+   * rotating or king mode, so switching into Win/Lose mode always starts
+   * everyone fresh, the same as a brand-new joiner.
+   */
+  lastResult: "win" | "lose" | null;
   /** Map of partnerId -> times partnered. */
   partners: Record<string, number>;
   /** Map of opponentId -> times opposed. */
