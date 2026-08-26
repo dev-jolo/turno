@@ -2,7 +2,7 @@ import { CourtCard } from "@/components/CourtCard";
 import { Eyebrow, PickerPanel } from "@/components/controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { Action, SessionState, Winner } from "@/engine";
+import type { Action, Player, SessionState, Winner } from "@/engine";
 import { courtsView, onHold, playersPerCourt, playingCount, waitingQueue } from "@/engine";
 import { Pause } from "lucide-react";
 import { useState } from "react";
@@ -27,6 +27,7 @@ function nameOf(state: SessionState, id: string | null): string | null {
 export function LiveScreen({ state, dispatch }: LiveScreenProps) {
   const [late, setLate] = useState("");
   const [stackPickerFor, setStackPickerFor] = useState<string | null>(null);
+  const [returnConfirmFor, setReturnConfirmFor] = useState<string | null>(null);
   const courts = courtsView(state);
   const queue = waitingQueue(state);
   const bench = onHold(state);
@@ -38,6 +39,26 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
   const setStack = (a: string, b: string) => {
     dispatch({ type: "SET_STACK", a, b });
     setStackPickerFor(null);
+  };
+
+  // A stacked player returning from hold is asked to confirm the pairing
+  // still stands, rather than it silently resuming — see ticket 03.
+  const addBack = (p: Player) => {
+    if (p.stackedWith) {
+      setReturnConfirmFor(p.id);
+    } else {
+      dispatch({ type: "RETURN_PLAYER", id: p.id });
+    }
+  };
+  const confirmReturn = (id: string) => {
+    dispatch({ type: "RETURN_PLAYER", id });
+    setReturnConfirmFor(null);
+  };
+  const declineReturn = (id: string) => {
+    // Unstack first so the redraw RETURN_PLAYER triggers never re-pairs them.
+    dispatch({ type: "UNSTACK", id });
+    dispatch({ type: "RETURN_PLAYER", id });
+    setReturnConfirmFor(null);
   };
 
   const addLate = () => {
@@ -167,36 +188,56 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
         <>
           <Eyebrow title="On hold" tag={String(bench.length)} />
           <ul className="flex flex-col gap-2">
-            {bench.map((p) => (
-              <li
-                key={p.id}
-                className="flex items-center gap-3 rounded-xl border border-dashed border-white/20 bg-[#1b2c28] px-3 py-2.5 opacity-95"
-              >
-                <span className="grid size-6 shrink-0 place-items-center rounded-md bg-coral text-[#0f1b1a]">
-                  <Pause className="size-3" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[15.5px] font-[650] text-sage">{p.name}</div>
-                  <div className="font-mono text-[11px] text-muted">
-                    stepped out · {p.games} played
+            {bench.map((p) => {
+              const stackedName = nameOf(state, p.stackedWith);
+              const confirmOpen = returnConfirmFor === p.id;
+              return (
+                <li
+                  key={p.id}
+                  className="flex flex-col gap-2 rounded-xl border border-dashed border-white/20 bg-[#1b2c28] px-3 py-2.5 opacity-95"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="grid size-6 shrink-0 place-items-center rounded-md bg-coral text-[#0f1b1a]">
+                      <Pause className="size-3" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[15.5px] font-[650] text-sage">{p.name}</div>
+                      <div className="font-mono text-[11px] text-muted">
+                        stepped out · {p.games} played
+                        {stackedName && ` · stacked with ${stackedName}`}
+                      </div>
+                    </div>
+                    <Button variant="primary" size="sm" onClick={() => addBack(p)}>
+                      Add back
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => dispatch({ type: "REMOVE_PLAYER", id: p.id })}
+                    >
+                      Remove
+                    </Button>
                   </div>
-                </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => dispatch({ type: "RETURN_PLAYER", id: p.id })}
-                >
-                  Add back
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => dispatch({ type: "REMOVE_PLAYER", id: p.id })}
-                >
-                  Remove
-                </Button>
-              </li>
-            ))}
+                  {confirmOpen && (
+                    <PickerPanel
+                      rows={[
+                        {
+                          key: "keep",
+                          label: `Still stack with ${stackedName}`,
+                          onClick: () => confirmReturn(p.id),
+                        },
+                        {
+                          key: "unstack",
+                          label: "No, unstack",
+                          onClick: () => declineReturn(p.id),
+                        },
+                      ]}
+                      onCancel={() => setReturnConfirmFor(null)}
+                    />
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </>
       )}

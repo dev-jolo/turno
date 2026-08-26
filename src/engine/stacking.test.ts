@@ -115,6 +115,27 @@ describe("unstack", () => {
   });
 });
 
+describe("return-from-hold decline", () => {
+  it("unstacking then returning a held, stacked player clears both sides and doesn't re-pair them", () => {
+    let s = session(6); // 4 playing, 2 waiting
+    const held = waitingQueue(s)[0].id;
+    const partnerId = waitingQueue(s)[1].id;
+    s = reduce(s, { type: "SET_STACK", a: held, b: partnerId }, zero);
+    s = reduce(s, { type: "HOLD_PLAYER", id: held }, zero);
+    expect(player(s, held).status).toBe("hold");
+
+    // The UI's "decline" path: unstack first, then return — same order as
+    // LiveScreen's declineReturn, so a partner who's still waiting is never
+    // transiently re-selected as a pair with the returning player.
+    s = reduce(s, { type: "UNSTACK", id: held }, zero);
+    s = reduce(s, { type: "RETURN_PLAYER", id: held }, zero);
+
+    expect(player(s, held).stackedWith).toBeNull();
+    expect(player(s, partnerId).stackedWith).toBeNull();
+    expect(player(s, held).status).not.toBe("hold"); // genuinely returned, not stuck
+  });
+});
+
 describe("removal cleanup", () => {
   it("clears the remaining partner's link when a stacked player is permanently removed", () => {
     let s = session(6);
