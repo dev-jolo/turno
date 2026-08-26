@@ -103,10 +103,12 @@ export interface PickerRow {
 }
 
 /**
- * A small inline dropdown panel of clickable rows plus a trailing Cancel row
- * — the "pick a player" pattern used by the court substitution and player
- * stacking controls. `emptyText` renders in place of the rows when `rows` is
- * empty (e.g. nobody eligible to pick).
+ * A small inline panel of clickable rows plus a trailing Cancel row. Used both
+ * for "pick one of several players" (court substitution, player stacking) and
+ * for a plain yes/no confirmation (the return-from-hold stacking prompt) —
+ * either way it's "a few options for this row, plus a way to back out."
+ * `emptyText` renders in place of the rows when `rows` is empty (e.g. nobody
+ * eligible to pick).
  */
 export function PickerPanel({
   rows,

@@ -24,10 +24,14 @@ function nameOf(state: SessionState, id: string | null): string | null {
   return state.players.find((p) => p.id === id)?.name ?? null;
 }
 
+/** Which player row has a picker/confirm panel open, and which one — at most
+ * one at a time, across both the "Stack…" picker and the return-confirm
+ * prompt, since they're the same "one inline panel open below a row" idea. */
+type ActivePanel = { kind: "stack" | "return"; id: string } | null;
+
 export function LiveScreen({ state, dispatch }: LiveScreenProps) {
   const [late, setLate] = useState("");
-  const [stackPickerFor, setStackPickerFor] = useState<string | null>(null);
-  const [returnConfirmFor, setReturnConfirmFor] = useState<string | null>(null);
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const courts = courtsView(state);
   const queue = waitingQueue(state);
   const bench = onHold(state);
@@ -36,29 +40,34 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
   const anyCourtActive = courts.some((c) => c.occupied);
   const stackingAvailable = state.format === "doubles";
 
+  const closePanel = () => setActivePanel(null);
+  const togglePanel = (kind: "stack" | "return", id: string) =>
+    setActivePanel((cur) => (cur?.kind === kind && cur.id === id ? null : { kind, id }));
+
   const setStack = (a: string, b: string) => {
     dispatch({ type: "SET_STACK", a, b });
-    setStackPickerFor(null);
+    closePanel();
   };
 
   // A stacked player returning from hold is asked to confirm the pairing
-  // still stands, rather than it silently resuming — see ticket 03.
-  const addBack = (p: Player) => {
+  // still stands, rather than it silently resuming — see ticket 03. A
+  // non-stacked player just returns immediately, same as before.
+  const requestReturn = (p: Player) => {
     if (p.stackedWith) {
-      setReturnConfirmFor(p.id);
+      togglePanel("return", p.id);
     } else {
       dispatch({ type: "RETURN_PLAYER", id: p.id });
     }
   };
   const confirmReturn = (id: string) => {
     dispatch({ type: "RETURN_PLAYER", id });
-    setReturnConfirmFor(null);
+    closePanel();
   };
   const declineReturn = (id: string) => {
     // Unstack first so the redraw RETURN_PLAYER triggers never re-pairs them.
     dispatch({ type: "UNSTACK", id });
     dispatch({ type: "RETURN_PLAYER", id });
-    setReturnConfirmFor(null);
+    closePanel();
   };
 
   const addLate = () => {
@@ -108,7 +117,7 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
           {queue.map((p, idx) => {
             const next = idx < per;
             const stackedName = nameOf(state, p.stackedWith);
-            const pickerOpen = stackPickerFor === p.id;
+            const pickerOpen = activePanel?.kind === "stack" && activePanel.id === p.id;
             const candidates = queue.filter((q) => q.id !== p.id);
             return (
               <li
@@ -131,11 +140,7 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
                     </div>
                   </div>
                   {stackingAvailable && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setStackPickerFor(pickerOpen ? null : p.id)}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => togglePanel("stack", p.id)}>
                       Stack…
                     </Button>
                   )}
@@ -173,7 +178,7 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
                       onClick: () => setStack(p.id, c.id),
                     }))}
                     emptyText="No one else waiting."
-                    onCancel={() => setStackPickerFor(null)}
+                    onCancel={closePanel}
                   />
                 )}
               </li>
@@ -190,7 +195,7 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
           <ul className="flex flex-col gap-2">
             {bench.map((p) => {
               const stackedName = nameOf(state, p.stackedWith);
-              const confirmOpen = returnConfirmFor === p.id;
+              const confirmOpen = activePanel?.kind === "return" && activePanel.id === p.id;
               return (
                 <li
                   key={p.id}
@@ -207,7 +212,7 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
                         {stackedName && ` · stacked with ${stackedName}`}
                       </div>
                     </div>
-                    <Button variant="primary" size="sm" onClick={() => addBack(p)}>
+                    <Button variant="primary" size="sm" onClick={() => requestReturn(p)}>
                       Add back
                     </Button>
                     <Button
@@ -232,7 +237,7 @@ export function LiveScreen({ state, dispatch }: LiveScreenProps) {
                           onClick: () => declineReturn(p.id),
                         },
                       ]}
-                      onCancel={() => setReturnConfirmFor(null)}
+                      onCancel={closePanel}
                     />
                   )}
                 </li>

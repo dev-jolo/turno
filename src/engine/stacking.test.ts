@@ -116,23 +116,57 @@ describe("unstack", () => {
 });
 
 describe("return-from-hold decline", () => {
-  it("unstacking then returning a held, stacked player clears both sides and doesn't re-pair them", () => {
-    let s = session(6); // 4 playing, 2 waiting
-    const held = waitingQueue(s)[0].id;
-    const partnerId = waitingQueue(s)[1].id;
-    s = reduce(s, { type: "SET_STACK", a: held, b: partnerId }, zero);
-    s = reduce(s, { type: "HOLD_PLAYER", id: held }, zero);
-    expect(player(s, held).status).toBe("hold");
+  // Hand-built so there's genuine open capacity at return time: 1 empty
+  // court (need=4), and exactly 4 waiting-eligible candidates — the held
+  // player H (stacked with P), P, and two unrelated solos Q/R. This is what
+  // makes the ordering claims below actually testable, rather than vacuous.
+  function heldPairScenario(): SessionState {
+    const base = session(1);
+    const mk = (id: string, enteredAt: number, status: Player["status"], stackedWith: string | null): Player => ({
+      id,
+      name: id,
+      games: 0,
+      seed: 0,
+      status,
+      enteredAt,
+      lastGameRound: 0,
+      holdAfter: false,
+      stackedWith,
+      partners: {},
+      opps: {},
+      streak: 0,
+    });
+    return {
+      ...base,
+      started: true,
+      courtsCount: 1,
+      courts: [null],
+      players: [
+        mk("h", 1, "hold", "p"),
+        mk("p", 2, "waiting", "h"),
+        mk("q", 3, "waiting", null),
+        mk("r", 4, "waiting", null),
+      ],
+    };
+  }
 
-    // The UI's "decline" path: unstack first, then return — same order as
-    // LiveScreen's declineReturn, so a partner who's still waiting is never
-    // transiently re-selected as a pair with the returning player.
-    s = reduce(s, { type: "UNSTACK", id: held }, zero);
-    s = reduce(s, { type: "RETURN_PLAYER", id: held }, zero);
+  it("counterfactual: returning while STILL stacked forces the pair together (why the order matters)", () => {
+    const s0 = heldPairScenario();
+    // Simulates the wrong order — return before unstacking.
+    const s1 = reduce(s0, { type: "RETURN_PLAYER", id: "h" }, zero);
+    expect(seatedIds(s1)).toEqual(expect.arrayContaining(["h", "p", "q", "r"]));
+    expect(sideOf(s1, "h")).toContain("p"); // forced together — a hard constraint, not chance
+  });
 
-    expect(player(s, held).stackedWith).toBeNull();
-    expect(player(s, partnerId).stackedWith).toBeNull();
-    expect(player(s, held).status).not.toBe("hold"); // genuinely returned, not stuck
+  it("the real decline order (unstack, then return) clears both links and doesn't get stuck", () => {
+    const s0 = heldPairScenario();
+    // LiveScreen's declineReturn order.
+    const s1 = reduce(s0, { type: "UNSTACK", id: "h" }, zero);
+    const s2 = reduce(s1, { type: "RETURN_PLAYER", id: "h" }, zero);
+
+    expect(player(s2, "h").stackedWith).toBeNull();
+    expect(player(s2, "p").stackedWith).toBeNull();
+    expect(player(s2, "h").status).not.toBe("hold"); // genuinely returned, not stuck
   });
 });
 
